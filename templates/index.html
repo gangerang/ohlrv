@@ -11,8 +11,8 @@
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
         {% for category, message in messages %}
-          <div class="alert alert-{{ 'success' if category=='success' else 'info' }} mt-3">
-            <pre>{{ message }}</pre>
+          <div class="alert alert-{{ 'danger' if category=='danger' else 'info' }} mt-3">
+            <pre style="white-space: pre-wrap;">{{ message|safe }}</pre>
           </div>
         {% endfor %}
       {% endif %}
@@ -28,11 +28,11 @@
       </div>
       <div class="mb-3">
         <label for="file_small" class="form-label">File Small</label>
-        <input type="text" class="form-control" id="file_small" name="file_small" placeholder="Plan small number or MS" required>
+        <input type="text" class="form-control" id="file_small" name="file_small" placeholder="Plan small number or Ms" required>
       </div>
       <div class="mb-3">
         <label for="sheet" class="form-label">Sheet (Optional)</label>
-        <input type="text" class="form-control" id="sheet" name="sheet" placeholder="e.g., P1J1">
+        <input type="text" class="form-control" id="sheet" name="sheet" placeholder="e.g., 1">
       </div>
       <div class="mb-3">
         <label for="part" class="form-label">Part</label>
@@ -46,7 +46,7 @@
         <label for="end" class="form-label">End Number</label>
         <input type="number" class="form-control" id="end" name="end" value="200">
       </div>
-      <div class="mb-3 form-check">
+      <div class="form-check mb-3">
         <input type="checkbox" class="form-check-input" id="preview" name="preview">
         <label class="form-check-label" for="preview">Preview Image</label>
       </div>

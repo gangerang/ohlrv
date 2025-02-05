@@ -4,13 +4,15 @@ import requests, json, subprocess
 from concurrent.futures import ThreadPoolExecutor
 
 app = Flask(__name__)
-app.secret_key = "CHANGE_ME_IN_PRODUCTION"  # Replace with a secure key
+app.secret_key = "CHANGE_THIS_SECRET"  # Change for production
 
-# Updated path for dezoomify in the container.
+# Path to the dezoomify executable.
+# (Update the path if you are using a Windows executable locally;
+# in Docker we expect the Linux binary to be installed at /usr/local/bin/dezoomify-rs)
 PATH_DEZOOMIFY = '/usr/local/bin/dezoomify-rs'
 
-# Mapping dictionary (same as your script)
-ms_mapping = {
+# Mapping dictionary
+MS_MAPPING = {
     'Ay': {'number': 3005, 'name': 'Abury'},
     'Ae': {'number': 3010, 'name': 'Armidale'},
     'Be': {'number': 3015, 'name': 'Bourke'},
@@ -33,103 +35,99 @@ ms_mapping = {
     'Wa': {'number': 3115, 'name': 'Wilcannia'}
 }
 
+# URL templates
+BASE_URL = 'https://api.lrsnative.com.au/hlrv/iiif/2/eirCP/{file_source}/{mid_range}/{mid_number}/{filename}.jp2/info.json'
+PREVIEW_URL = 'https://api.lrsnative.com.au/hlrv/iiif/2/eirCP/{file_source}/{mid_range}/{mid_number}/{filename}.jp2/full/1024,/0/default.jpg'
+
 def get_small_number(ms):
-    return ms_mapping.get(ms, {}).get('number')
+    return MS_MAPPING.get(ms, {}).get('number')
 
-def print_ms_to_small_numbers():
-    return "\n".join(f"{ms}: {info['number']} ({info['name']})" for ms, info in ms_mapping.items())
+def construct_url(file_source, mid_range, mid_number, filename):
+    return BASE_URL.format(file_source=file_source, mid_range=mid_range, mid_number=mid_number, filename=filename)
 
-# URL constants for image fetching
-URL_SLASH = '%2F'
-DOWNLOAD_FORMAT = '.jpg'
-URL_START = 'https://api.lrsnative.com.au/hlrv/iiif/2/'
-URL_END_INFO = 'info.json'
-URL_END_JPG = f'full/full/0/default{DOWNLOAD_FORMAT}'
-URL_END_PREVIEW = f'full/1024,/0/default{DOWNLOAD_FORMAT}'
+def fetch_url(mid_number, file_source, file_big, file_small, file_end):
+    # Calculate the mid_range based on mid_number (e.g., "1-100", "101-200", etc.)
+    mid_range = f'{((mid_number - 1) // 100) * 100 + 1}-{(((mid_number - 1) // 100) + 1) * 100}'
+    filename = f'{file_source}_{file_big}_{file_small}{file_end}'
+    url_info = construct_url(file_source, mid_range, mid_number, filename)
+    response = requests.get(url_info, verify=True)
+    return mid_number, response.status_code, url_info, response.text
 
-def fetch_url(mid_number, file_end, mid_eir, mid_source, file_source, file_big, file_small):
-    if mid_number <= 100:
-        mid_range = '1-100'
-    elif mid_number <= 200:
-        mid_range = '101-200'
-    elif mid_number <= 300:
-        mid_range = '201-300'
-    elif mid_number <= 400:
-        mid_range = '301-400'
-    else:
-        mid_range = '401-500'
-    url_info = f'{URL_START}{mid_eir}{URL_SLASH}{mid_source}{URL_SLASH}{mid_range}{URL_SLASH}{mid_number}{URL_SLASH}{file_source}_{file_big}_{file_small}{file_end}.jp2/{URL_END_INFO}'
-    r = requests.get(url_info, verify=True)
-    return mid_number, r.status_code, url_info, r.text
-
-def download_image(url_info, mid_file, preview):
+def download_image(url_info, mid_file, preview, file_source, file_big, file_small, file_end, mid_number):
+    # Compute the mid_range again to build the preview URL
+    mid_range = f'{((mid_number - 1) // 100) * 100 + 1}-{(((mid_number - 1) // 100) + 1) * 100}'
     if preview:
-        url_preview = url_info.replace(URL_END_INFO, URL_END_PREVIEW)
-        # In a web context, you might send this URL to your template rather than opening a browser.
-        print('Preview image URL:', url_preview)
-    
-    # Call dezoomify using the updated executable path
-    result = subprocess.run([PATH_DEZOOMIFY, '-l', url_info, f'{mid_file}{DOWNLOAD_FORMAT}'])
+        preview_url = PREVIEW_URL.format(
+            file_source=file_source,
+            mid_range=mid_range,
+            mid_number=mid_number,
+            filename=f'{file_source}_{file_big}_{file_small}{file_end}'
+        )
+        # Instead of opening a browser, we flash the preview URL for the user to click
+        flash(f'Preview image: <a href="{preview_url}" target="_blank">{preview_url}</a>', 'info')
+    result = subprocess.run([PATH_DEZOOMIFY, '-l', url_info, f'{mid_file}.jpg'], capture_output=True)
     if result.returncode != 0:
-        return f'Error during dezoomify execution: {result.stderr}'
+        return f'Error during dezoomify execution: {result.stderr.decode()}<br>'
     else:
-        return f'Image successfully saved to {mid_file}{DOWNLOAD_FORMAT}'
+        return f'Image successfully saved to {mid_file}.jpg<br>'
 
-def search_and_download(file_source, file_big, file_small, file_sheet, file_part, mid_number_start, mid_number_end, preview):
-    file_end = f'P{file_sheet}J{file_part}' if file_sheet else f'J{file_part}'
-    
-    if not any(char.isdigit() for char in file_small):
-        ms_lookup = get_small_number(file_small)
-        if ms_lookup is None:
-            return False, f"Invalid file_small parameter. Valid options:\n{print_ms_to_small_numbers()}"
-        else:
-            file_small = str(ms_lookup)
-    
-    mid_eir = 'eirCP'
-    mid_source = file_source
+def search_and_download(file_source, file_big, file_small, file_end, start_number, end_number, preview):
     found = False
     message = ""
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        futures = [executor.submit(fetch_url, mid_number, file_end, mid_eir, mid_source, file_source, file_big, file_small)
-                   for mid_number in range(mid_number_start, mid_number_end)]
-        for future in futures:
-            mid_number, status_code, url_info, response_text = future.result()
-            if status_code == 200:
-                try:
-                    image_json = json.loads(response_text)
-                    max_width = image_json['width']
-                    max_height = image_json['height']
-                    max_mp = round(max_width * max_height / 10**6, 1)
-                    message += f'Found image at {url_info}\n'
-                    message += f'Image is {max_width}x{max_height} = {max_mp}MP\n'
-                except Exception as e:
-                    message += f"Error parsing image JSON: {e}\n"
-                    continue
-
-                mid_file = f'{file_source}_{file_big}_{file_small}{file_end}'
-                download_msg = download_image(url_info, mid_file, preview)
-                message += download_msg
-                found = True
-                break
-
-    if not found:
-        message += "\nNo image found with the provided parameters."
+    # Loop through candidate mid_numbers
+    for mid_number in range(start_number, end_number):
+        mid_number, status_code, url_info, response_text = fetch_url(mid_number, file_source, file_big, file_small, file_end)
+        if status_code == 200:
+            try:
+                image_json = json.loads(response_text)
+                max_width = image_json.get('width')
+                max_height = image_json.get('height')
+                max_mp = round(max_width * max_height / 10**6, 1)
+                message += f"Found image at {url_info}<br>"
+                message += f"Image is {max_width}x{max_height} = {max_mp}MP<br>"
+            except Exception as e:
+                message += f"Error parsing JSON: {str(e)}<br>"
+                continue
+            mid_file = f'{file_source}_{file_big}_{file_small}{file_end}'
+            message += download_image(url_info, mid_file, preview, file_source, file_big, file_small, file_end, mid_number)
+            found = True
+            break
     return found, message
 
 @app.route("/", methods=["GET", "POST"])
 def index():
     if request.method == "POST":
+        # Get form inputs
         file_source = request.form.get("file_source")
         file_big = request.form.get("file_big")
         file_small = request.form.get("file_small")
         file_sheet = request.form.get("sheet", "")
         file_part = request.form.get("part", "1")
-        mid_number_start = int(request.form.get("start", 1))
-        mid_number_end = int(request.form.get("end", 200))
+        try:
+            start_number = int(request.form.get("start", 1))
+            end_number = int(request.form.get("end", 200))
+        except ValueError:
+            flash("Start and End numbers must be integers.", "danger")
+            return redirect(url_for("index"))
         preview = (request.form.get("preview") == "on")
-        
-        found, result_message = search_and_download(file_source, file_big, file_small, file_sheet, file_part, mid_number_start, mid_number_end, preview)
-        flash(result_message, "info")
+        # Build file_end from sheet and part (if sheet is provided, use P{sheet}J{part}; otherwise, just J{part})
+        file_end = f'P{file_sheet}J{file_part}' if file_sheet else f'J{file_part}'
+
+        # If file_small isn’t numeric, convert it using the MS_MAPPING lookup.
+        if not any(char.isdigit() for char in file_small):
+            num = get_small_number(file_small)
+            if not num:
+                flash(f'Invalid Ms: {file_small}. Valid options are: ' + ", ".join(MS_MAPPING.keys()), 'danger')
+                return redirect(url_for("index"))
+            else:
+                file_small = str(num)
+
+        # Call our search-and-download routine.
+        found, message = search_and_download(file_source, file_big, file_small, file_end, start_number, end_number, preview)
+        if not found:
+            message += "No results found with provided parameters. "
+            # Optionally, you might iterate over additional sheet numbers here.
+        flash(message, 'info')
         return redirect(url_for("index"))
     return render_template("index.html")
 
