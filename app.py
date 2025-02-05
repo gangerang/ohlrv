@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
 from flask import Flask, render_template, request, redirect, url_for, flash
-import requests, json, subprocess
+import requests, json, subprocess, logging
 from concurrent.futures import ThreadPoolExecutor
 
 app = Flask(__name__)
 app.secret_key = "CHANGE_THIS_SECRET"  # Change for production
 
+# Configure logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s [%(levelname)s] %(message)s"
+)
+
 # Path to the dezoomify executable.
-# (Update the path if you are using a Windows executable locally;
-# in Docker we expect the Linux binary to be installed at /usr/local/bin/dezoomify-rs)
+# (In Docker, we expect the Linux binary to be at /usr/local/bin/dezoomify-rs)
 PATH_DEZOOMIFY = '/usr/local/bin/dezoomify-rs'
 
 # Mapping dictionary
@@ -36,25 +41,39 @@ MS_MAPPING = {
 }
 
 # URL templates
-BASE_URL = 'https://api.lrsnative.com.au/hlrv/iiif/2/eirCP/{file_source}/{mid_range}/{mid_number}/{filename}.jp2/info.json'
-PREVIEW_URL = 'https://api.lrsnative.com.au/hlrv/iiif/2/eirCP/{file_source}/{mid_range}/{mid_number}/{filename}.jp2/full/1024,/0/default.jpg'
+BASE_URL = 'https://api.lrsnative.com.au/hlrv/iiif/2/eirCP%2F{file_source}%2F{mid_range}%2F{mid_number}%2F{filename}.jp2/info.json'
+PREVIEW_URL = 'https://api.lrsnative.com.au/hlrv/iiif/2/eirCP%2F{file_source}%2F{mid_range}%2F{mid_number}%2F{filename}.jp2/full/1024,/0/default.jpg'
 
 def get_small_number(ms):
-    return MS_MAPPING.get(ms, {}).get('number')
+    num = MS_MAPPING.get(ms, {}).get('number')
+    logging.debug(f"get_small_number({ms}) returned {num}")
+    return num
 
 def construct_url(file_source, mid_range, mid_number, filename):
-    return BASE_URL.format(file_source=file_source, mid_range=mid_range, mid_number=mid_number, filename=filename)
+    url = BASE_URL.format(
+        file_source=file_source,
+        mid_range=mid_range,
+        mid_number=mid_number,
+        filename=filename
+    )
+    logging.debug(f"Constructed URL: {url}")
+    return url
 
 def fetch_url(mid_number, file_source, file_big, file_small, file_end):
-    # Calculate the mid_range based on mid_number (e.g., "1-100", "101-200", etc.)
     mid_range = f'{((mid_number - 1) // 100) * 100 + 1}-{(((mid_number - 1) // 100) + 1) * 100}'
     filename = f'{file_source}_{file_big}_{file_small}{file_end}'
     url_info = construct_url(file_source, mid_range, mid_number, filename)
-    response = requests.get(url_info, verify=True)
+    logging.debug(f"Fetching URL for mid_number {mid_number}: {url_info}")
+    try:
+        # Set a timeout (in seconds) to avoid hanging
+        response = requests.get(url_info, verify=True, timeout=10)
+        logging.debug(f"Received status {response.status_code} for mid_number {mid_number}")
+    except Exception as e:
+        logging.error(f"Error fetching URL for mid_number {mid_number}: {e}")
+        return mid_number, 0, url_info, ""
     return mid_number, response.status_code, url_info, response.text
 
 def download_image(url_info, mid_file, preview, file_source, file_big, file_small, file_end, mid_number):
-    # Compute the mid_range again to build the preview URL
     mid_range = f'{((mid_number - 1) // 100) * 100 + 1}-{(((mid_number - 1) // 100) + 1) * 100}'
     if preview:
         preview_url = PREVIEW_URL.format(
@@ -63,21 +82,27 @@ def download_image(url_info, mid_file, preview, file_source, file_big, file_smal
             mid_number=mid_number,
             filename=f'{file_source}_{file_big}_{file_small}{file_end}'
         )
-        # Instead of opening a browser, we flash the preview URL for the user to click
+        logging.info(f"Preview URL: {preview_url}")
         flash(f'Preview image: <a href="{preview_url}" target="_blank">{preview_url}</a>', 'info')
+    logging.info(f"Starting dezoomify for URL: {url_info}")
     result = subprocess.run([PATH_DEZOOMIFY, '-l', url_info, f'{mid_file}.jpg'], capture_output=True)
     if result.returncode != 0:
-        return f'Error during dezoomify execution: {result.stderr.decode()}<br>'
+        error_message = result.stderr.decode()
+        logging.error(f"dezoomify error for {mid_file}.jpg: {error_message}")
+        return f'Error during dezoomify execution: {error_message}<br>'
     else:
+        logging.info(f"dezoomify succeeded for {mid_file}.jpg")
         return f'Image successfully saved to {mid_file}.jpg<br>'
 
 def search_and_download(file_source, file_big, file_small, file_end, start_number, end_number, preview):
     found = False
     message = ""
-    # Loop through candidate mid_numbers
+    logging.info(f"Starting search_and_download with parameters: file_source={file_source}, file_big={file_big}, file_small={file_small}, file_end={file_end}, start_number={start_number}, end_number={end_number}, preview={preview}")
     for mid_number in range(start_number, end_number):
+        logging.debug(f"Trying mid_number: {mid_number}")
         mid_number, status_code, url_info, response_text = fetch_url(mid_number, file_source, file_big, file_small, file_end)
         if status_code == 200:
+            logging.info(f"Found valid response for mid_number {mid_number}")
             try:
                 image_json = json.loads(response_text)
                 max_width = image_json.get('width')
@@ -85,19 +110,25 @@ def search_and_download(file_source, file_big, file_small, file_end, start_numbe
                 max_mp = round(max_width * max_height / 10**6, 1)
                 message += f"Found image at {url_info}<br>"
                 message += f"Image is {max_width}x{max_height} = {max_mp}MP<br>"
+                logging.debug(f"Image dimensions for mid_number {mid_number}: {max_width}x{max_height} = {max_mp}MP")
             except Exception as e:
-                message += f"Error parsing JSON: {str(e)}<br>"
+                logging.error(f"Error parsing JSON for mid_number {mid_number}: {e}")
+                message += f"Error parsing JSON for mid_number {mid_number}: {e}<br>"
                 continue
             mid_file = f'{file_source}_{file_big}_{file_small}{file_end}'
             message += download_image(url_info, mid_file, preview, file_source, file_big, file_small, file_end, mid_number)
             found = True
             break
+        else:
+            logging.debug(f"mid_number {mid_number} returned status {status_code}")
+    if not found:
+        message += "No image found with the provided parameters.<br>"
+    logging.info("Finished search_and_download")
     return found, message
 
 @app.route("/", methods=["GET", "POST"])
 def index():
     if request.method == "POST":
-        # Get form inputs
         file_source = request.form.get("file_source")
         file_big = request.form.get("file_big")
         file_small = request.form.get("file_small")
@@ -110,10 +141,8 @@ def index():
             flash("Start and End numbers must be integers.", "danger")
             return redirect(url_for("index"))
         preview = (request.form.get("preview") == "on")
-        # Build file_end from sheet and part (if sheet is provided, use P{sheet}J{part}; otherwise, just J{part})
         file_end = f'P{file_sheet}J{file_part}' if file_sheet else f'J{file_part}'
-
-        # If file_small isn’t numeric, convert it using the MS_MAPPING lookup.
+        logging.info(f"Received form data: file_source={file_source}, file_big={file_big}, file_small={file_small}, file_sheet={file_sheet}, file_part={file_part}, start_number={start_number}, end_number={end_number}, preview={preview}")
         if not any(char.isdigit() for char in file_small):
             num = get_small_number(file_small)
             if not num:
@@ -121,12 +150,11 @@ def index():
                 return redirect(url_for("index"))
             else:
                 file_small = str(num)
-
-        # Call our search-and-download routine.
+                logging.info(f"Converted file_small using MS_MAPPING: {file_small}")
         found, message = search_and_download(file_source, file_big, file_small, file_end, start_number, end_number, preview)
         if not found:
             message += "No results found with provided parameters. "
-            # Optionally, you might iterate over additional sheet numbers here.
+            logging.warning("No results found in search_and_download")
         flash(message, 'info')
         return redirect(url_for("index"))
     return render_template("index.html")
