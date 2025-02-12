@@ -95,8 +95,25 @@ def download_image(url_info, mid_file, preview, preview_only, file_source, file_
     if preview_only:
         logging.info(f"Preview only mode: skipping download for {mid_file}.jpg")
         return f"Preview only mode: skipping download for {mid_file}.jpg<br>"
+    
     logging.info(f"Starting dezoomify for mid_number {mid_number}, saving to {mid_file}.jpg")
-    result = subprocess.run([PATH_DEZOOMIFY, '-l', url_info, f'{mid_file}.jpg'], capture_output=True)
+
+    # Check that the dezoomify executable exists and is executable
+    import os
+    if not os.path.exists(PATH_DEZOOMIFY):
+        error_message = f"Executable not found: {PATH_DEZOOMIFY}"
+        logging.error(error_message)
+        return f"{error_message}<br>"
+    if not os.access(PATH_DEZOOMIFY, os.X_OK):
+        error_message = f"File is not executable: {PATH_DEZOOMIFY}"
+        logging.error(error_message)
+        return f"{error_message}<br>"
+
+    # Build the command as a string and use shell=True.
+    # (This helps if dezoomify-rs turns out to be a script missing a shebang or otherwise needs a shell.)
+    cmd = f"{PATH_DEZOOMIFY} -l {url_info} {mid_file}.jpg"
+    result = subprocess.run(cmd, shell=True, capture_output=True)
+
     if result.returncode != 0:
         error_message = result.stderr.decode()
         logging.error(f"dezoomify error for {mid_file}.jpg: {error_message}")
@@ -104,6 +121,7 @@ def download_image(url_info, mid_file, preview, preview_only, file_source, file_
     else:
         logging.info(f"dezoomify succeeded for {mid_file}.jpg")
         return f'Image successfully saved to {mid_file}.jpg<br>'
+
 
 def search_and_download(file_source, file_big, file_small, file_end, start_number, end_number, preview, preview_only):
     found = False
