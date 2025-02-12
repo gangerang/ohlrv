@@ -2,10 +2,11 @@
 from flask import Flask, render_template, request, redirect, url_for, flash
 import requests, json, subprocess, logging, os, sys
 from urllib.parse import quote
+from iiif_downloader_info import download_image_from_info
 
 # Import the iiif_downloader module.
 # Make sure the iiif_downloader.py file from https://github.com/ecoto/iiif_downloader is in your project directory.
-import iiif_downloader
+import iiif_downloader_info
 
 app = Flask(__name__)
 app.secret_key = "CHANGE_THIS_SECRET"  # Change for production
@@ -110,27 +111,21 @@ def download_image(url_info, mid_file, preview, preview_only, file_source, file_
     os.makedirs(download_dir, exist_ok=True)
     logging.info(f"Using download directory: {download_dir}")
     
-    # Build the argument list.
-    # Here, url_info is the manifest URL, and download_dir is where images will be stored.
-    # Adjust the flags (-w, -c) as needed.
-    args = ["iiif_downloader.py", url_info, download_dir, "-w", "2500", "-c"]
-    logging.info(f"Calling iiif_downloader with arguments: {args}")
-    
-    # Temporarily override sys.argv and call the main() of iiif_downloader.
-    old_argv = sys.argv
-    sys.argv = args
+    desired_file = f"{mid_file}.jpg"
+    logging.info(f"Calling iiif_downloader with arguments: {url_info}, {desired_file}")
+
     try:
-        iiif_downloader.main()  # This will perform the download.
+        download_image_from_info(url_info, desired_file, verify_ssl=False)
+        message = f"Image successfully saved to {desired_file}"
     except Exception as e:
-        logging.error(f"Error during iiif_downloader.main() call: {e}")
-        sys.argv = old_argv
-        return f"Error during iiif_downloader execution: {e}<br>"
-    sys.argv = old_argv
+        message = f"Error during download: {e}"
     
     # List contents of the download directory.
     try:
         files = os.listdir(download_dir)
         logging.debug(f"Contents of download directory: {files}")
+        current_dir = os.listdir()
+        logging.debug(f"Contents of current directory: {current_dir}")
     except Exception as e:
         logging.error(f"Error listing download directory: {e}")
         files = []
@@ -142,7 +137,6 @@ def download_image(url_info, mid_file, preview, preview_only, file_source, file_
     output_file = os.path.join(download_dir, jpg_files[0])
     
     # Move (rename) the output file to the desired filename.
-    desired_file = f"{mid_file}.jpg"
     try:
         os.rename(output_file, desired_file)
         logging.info(f"Moved downloaded file from {output_file} to {desired_file}")
