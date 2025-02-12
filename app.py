@@ -103,7 +103,7 @@ def download_image(url_info, mid_file, preview, preview_only, file_source, file_
         # For example:
         from iiif_downloader_info import download_image_from_info
         desired_file = os.path.join(download_dir, f"{mid_file}.jpg")
-        download_image_from_info(url_info, desired_file, image_max_width="2500", verify_ssl=False)
+        download_image_from_info(url_info, desired_file, image_max_width="5362", verify_ssl=False)
         logging.info(f"Image downloaded to {desired_file}")
     except Exception as e:
         logging.error(f"Error during iiif_downloader download: {e}")
