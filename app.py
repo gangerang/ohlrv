@@ -7,8 +7,7 @@ app = Flask(__name__)
 app.secret_key = "CHANGE_THIS_SECRET"  # Change for production
 
 # Path to the dezoomify executable.
-# (Update the path if you are using a Windows executable locally;
-# in Docker we expect the Linux binary to be installed at /usr/local/bin/dezoomify-rs)
+# (In Docker we expect the Linux binary to be installed at /usr/local/bin/dezoomify-rs)
 PATH_DEZOOMIFY = '/usr/local/bin/dezoomify-rs'
 
 # Mapping dictionary
@@ -43,17 +42,22 @@ def get_small_number(ms):
     return MS_MAPPING.get(ms, {}).get('number')
 
 def construct_url(file_source, mid_range, mid_number, filename):
-    return BASE_URL.format(file_source=file_source, mid_range=mid_range, mid_number=mid_number, filename=filename)
+    return BASE_URL.format(
+        file_source=file_source,
+        mid_range=mid_range,
+        mid_number=mid_number,
+        filename=filename
+    )
 
 def fetch_url(mid_number, file_source, file_big, file_small, file_end):
-    # Calculate the mid_range based on mid_number (e.g., "1-100", "101-200", etc.)
+    # Calculate the mid_range (e.g., "1-100", "101-200", etc.)
     mid_range = f'{((mid_number - 1) // 100) * 100 + 1}-{(((mid_number - 1) // 100) + 1) * 100}'
     filename = f'{file_source}_{file_big}_{file_small}{file_end}'
     url_info = construct_url(file_source, mid_range, mid_number, filename)
     response = requests.get(url_info, verify=True)
     return mid_number, response.status_code, url_info, response.text
 
-def download_image(url_info, mid_file, preview, file_source, file_big, file_small, file_end, mid_number):
+def download_image(url_info, mid_file, preview, preview_only, file_source, file_big, file_small, file_end, mid_number):
     # Compute the mid_range again to build the preview URL
     mid_range = f'{((mid_number - 1) // 100) * 100 + 1}-{(((mid_number - 1) // 100) + 1) * 100}'
     if preview:
@@ -63,15 +67,18 @@ def download_image(url_info, mid_file, preview, file_source, file_big, file_smal
             mid_number=mid_number,
             filename=f'{file_source}_{file_big}_{file_small}{file_end}'
         )
-        # Instead of opening a browser, we flash the preview URL for the user to click
+        # Flash the preview URL for the user to click
         flash(f'Preview image: <a href="{preview_url}" target="_blank">{preview_url}</a>', 'info')
+    # If in preview-only mode, skip the download command
+    if preview_only:
+        return f"Preview only mode: skipping download for {mid_file}.jpg<br>"
     result = subprocess.run([PATH_DEZOOMIFY, '-l', url_info, f'{mid_file}.jpg'], capture_output=True)
     if result.returncode != 0:
         return f'Error during dezoomify execution: {result.stderr.decode()}<br>'
     else:
         return f'Image successfully saved to {mid_file}.jpg<br>'
 
-def search_and_download(file_source, file_big, file_small, file_end, start_number, end_number, preview):
+def search_and_download(file_source, file_big, file_small, file_end, start_number, end_number, preview, preview_only):
     found = False
     message = ""
     # Loop through candidate mid_numbers
@@ -89,7 +96,7 @@ def search_and_download(file_source, file_big, file_small, file_end, start_numbe
                 message += f"Error parsing JSON: {str(e)}<br>"
                 continue
             mid_file = f'{file_source}_{file_big}_{file_small}{file_end}'
-            message += download_image(url_info, mid_file, preview, file_source, file_big, file_small, file_end, mid_number)
+            message += download_image(url_info, mid_file, preview, preview_only, file_source, file_big, file_small, file_end, mid_number)
             found = True
             break
     return found, message
@@ -110,7 +117,8 @@ def index():
             flash("Start and End numbers must be integers.", "danger")
             return redirect(url_for("index"))
         preview = (request.form.get("preview") == "on")
-        # Build file_end from sheet and part (if sheet is provided, use P{sheet}J{part}; otherwise, just J{part})
+        preview_only = (request.form.get("preview_only") == "on")
+        # Build file_end from sheet and part (if sheet provided, use P{sheet}J{part}; otherwise, just J{part})
         file_end = f'P{file_sheet}J{file_part}' if file_sheet else f'J{file_part}'
 
         # If file_small isn’t numeric, convert it using the MS_MAPPING lookup.
@@ -123,10 +131,10 @@ def index():
                 file_small = str(num)
 
         # Call our search-and-download routine.
-        found, message = search_and_download(file_source, file_big, file_small, file_end, start_number, end_number, preview)
+        found, message = search_and_download(file_source, file_big, file_small, file_end,
+                                             start_number, end_number, preview, preview_only)
         if not found:
             message += "No results found with provided parameters. "
-            # Optionally, you might iterate over additional sheet numbers here.
         flash(message, 'info')
         return redirect(url_for("index"))
     return render_template("index.html")
