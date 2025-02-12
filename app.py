@@ -1,5 +1,4 @@
-#!/usr/bin/env python3
-from flask import Flask, render_template, request, redirect, url_for, flash
+from flask import Flask, render_template, request, redirect, url_for, flash, send_file
 import requests, json, subprocess, logging, os, sys
 from urllib.parse import quote
 from iiif_downloader_info import download_image_from_info
@@ -49,19 +48,9 @@ MS_MAPPING = {
     'Wa': {'number': 3115, 'name': 'Wilcannia'}
 }
 
-# URL construction functions.
 def construct_url(file_source, mid_range, mid_number, filename):
-    """
-    Constructs the IIIF info URL by building a path segment and percent‑encoding it.
-    For example, the segment:
-      eirCP/BS/1-100/15/BS_650_1538J1.jp2
-    becomes:
-      eirCP%2FBS%2F1-100%2F15%2FBS_650_1538J1.jp2
-    and the final URL is:
-      https://api.lrsnative.com.au/hlrv/iiif/2/eirCP%2FBS%2F1-100%2F15%2FBS_650_1538J1.jp2/info.json
-    """
     path_segment = f"eirCP/{file_source}/{mid_range}/{mid_number}/{filename}.jp2"
-    encoded_segment = quote(path_segment, safe='')  # Encode all characters.
+    encoded_segment = quote(path_segment, safe='')  
     url = f"https://api.lrsnative.com.au/hlrv/iiif/2/{encoded_segment}/info.json"
     logging.debug(f"Constructed info URL: {url}")
     return url
@@ -79,7 +68,6 @@ def get_small_number(ms):
     return num
 
 def fetch_url(mid_number, file_source, file_big, file_small, file_end):
-    # Calculate mid_range (e.g., "1-100", "101-200", etc.)
     mid_range = f'{((mid_number - 1) // 100) * 100 + 1}-{(((mid_number - 1) // 100) + 1) * 100}'
     filename = f'{file_source}_{file_big}_{file_small}{file_end}'
     url_info = construct_url(file_source, mid_range, mid_number, filename)
@@ -93,7 +81,6 @@ def fetch_url(mid_number, file_source, file_big, file_small, file_end):
     return mid_number, response.status_code, url_info, response.text
 
 def download_image(url_info, mid_file, preview, preview_only, file_source, file_big, file_small, file_end, mid_number):
-    # Calculate mid_range for preview URL construction.
     mid_range = f'{((mid_number - 1) // 100) * 100 + 1}-{(((mid_number - 1) // 100) + 1) * 100}'
     if preview:
         preview_url = construct_preview_url(file_source, mid_range, mid_number, f'{file_source}_{file_big}_{file_small}{file_end}')
@@ -101,56 +88,33 @@ def download_image(url_info, mid_file, preview, preview_only, file_source, file_
         flash(f'Preview image: <a href="{preview_url}" target="_blank">{preview_url}</a>', 'info')
     if preview_only:
         logging.info(f"Preview only mode: skipping download for {mid_file}.jpg")
-        return f"Preview only mode: skipping download for {mid_file}.jpg<br>"
+        return None  # In preview-only mode, do not proceed further.
     
-    # Use iiif_downloader directly via its Python API.
-    # The command-line usage is:
-    #   python iiif_downloader.py iif_document_url images_base_path [-m metadata_file_path] [-w image_max_width] [-c]
-    # We simulate that by constructing a list of arguments.
+    # Set a download directory.
     download_dir = "/tmp/iiif_downloader_images"
     os.makedirs(download_dir, exist_ok=True)
     logging.info(f"Using download directory: {download_dir}")
     
-    desired_file = f"{mid_file}.jpg"
-    logging.info(f"Calling iiif_downloader with arguments: {url_info}, {desired_file}")
-
+    # Instead of simulating command-line arguments, call the download function directly.
     try:
-        download_image_from_info(url_info, desired_file, verify_ssl=False)
-        message = f"Image successfully saved to {desired_file}"
+        logging.info(f"Downloading image using iiif_downloader from manifest URL: {url_info}")
+        # Call the function from the imported module.
+        # This assumes that the iiif_downloader module has a function named download_image_from_info().
+        # For example:
+        from iiif_downloader_info import download_image_from_info
+        desired_file = os.path.join(download_dir, f"{mid_file}.jpg")
+        download_image_from_info(url_info, desired_file, image_max_width="2500", verify_ssl=False)
+        logging.info(f"Image downloaded to {desired_file}")
     except Exception as e:
-        message = f"Error during download: {e}"
+        logging.error(f"Error during iiif_downloader download: {e}")
+        return None
     
-    # List contents of the download directory.
-    try:
-        files = os.listdir(download_dir)
-        logging.debug(f"Contents of download directory: {files}")
-        current_dir = os.listdir()
-        logging.debug(f"Contents of current directory: {current_dir}")
-    except Exception as e:
-        logging.error(f"Error listing download directory: {e}")
-        files = []
-    
-    jpg_files = [f for f in files if f.lower().endswith('.jpg')]
-    if not jpg_files:
-        logging.error("No .jpg file found in download directory")
-        return "iiif_downloader did not produce any jpg file<br>"
-    output_file = os.path.join(download_dir, jpg_files[0])
-    
-    # Move (rename) the output file to the desired filename.
-    try:
-        os.rename(output_file, desired_file)
-        logging.info(f"Moved downloaded file from {output_file} to {desired_file}")
-    except Exception as e:
-        logging.error(f"Error moving file: {e}")
-        return f"Error moving downloaded file: {e}<br>"
-    
-    return f"Image successfully saved to {desired_file}<br>"
+    return desired_file
 
 def search_and_download(file_source, file_big, file_small, file_end, start_number, end_number, preview, preview_only):
     found = False
     message = ""
-    logging.info(f"Starting search_and_download with file_source={file_source}, file_big={file_big}, file_small={file_small}, file_end={file_end}, start_number={start_number}, end_number={end_number}, preview={preview}, preview_only={preview_only}")
-    # Loop through candidate mid_numbers.
+    logging.info(f"Starting search_and_download with parameters: file_source={file_source}, file_big={file_big}, file_small={file_small}, file_end={file_end}, start_number={start_number}, end_number={end_number}, preview={preview}, preview_only={preview_only}")
     for mid_number in range(start_number, end_number):
         logging.debug(f"Trying mid_number: {mid_number}")
         mid_number, status_code, url_info, response_text = fetch_url(mid_number, file_source, file_big, file_small, file_end)
@@ -164,23 +128,26 @@ def search_and_download(file_source, file_big, file_small, file_end, start_numbe
                 message += f"Found image at {url_info}<br>"
                 message += f"Image is {max_width}x{max_height} = {max_mp}MP<br>"
                 logging.debug(f"Image dimensions: {max_width}x{max_height} ({max_mp}MP)")
-                # Use the info JSON as received.
             except Exception as e:
                 logging.error(f"Error parsing JSON for mid_number {mid_number}: {e}")
                 message += f"Error parsing JSON for mid_number {mid_number}: {str(e)}<br>"
                 continue
             mid_file = f'{file_source}_{file_big}_{file_small}{file_end}'
-            message += download_image(url_info, mid_file, preview, preview_only,
-                                      file_source, file_big, file_small, file_end, mid_number)
-            found = True
-            break
+            downloaded_file = download_image(url_info, mid_file, preview, preview_only,
+                                               file_source, file_big, file_small, file_end, mid_number)
+            if downloaded_file:
+                found = True
+                message += f"Image successfully downloaded and saved as {downloaded_file}<br>"
+                return found, downloaded_file  # Return the downloaded file path.
+            else:
+                message += f"Download failed for mid_number {mid_number}<br>"
         else:
             logging.debug(f"mid_number {mid_number} returned status {status_code}")
     if not found:
         message += "No image found with the provided parameters.<br>"
         logging.warning("Search completed: no valid image found.")
     logging.info("Finished search_and_download")
-    return found, message
+    return found, None
 
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -210,13 +177,14 @@ def index():
             else:
                 file_small = str(num)
                 logging.info(f"Converted file_small using MS_MAPPING: {file_small}")
-        found, message = search_and_download(file_source, file_big, file_small, file_end,
-                                             start_number, end_number, preview, preview_only)
-        if not found:
-            message += "No results found with provided parameters. "
-            logging.warning("No results found with provided parameters.")
-        flash(message, 'info')
-        return redirect(url_for("index"))
+        found, downloaded_file = search_and_download(file_source, file_big, file_small, file_end,
+                                                     start_number, end_number, preview, preview_only)
+        if found and downloaded_file:
+            # Send the file directly to the browser for download.
+            return send_file(downloaded_file, as_attachment=True)
+        else:
+            flash("No image could be downloaded with the provided parameters.", "danger")
+            return redirect(url_for("index"))
     return render_template("index.html")
 
 if __name__ == "__main__":
