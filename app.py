@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 from flask import Flask, render_template, request, redirect, url_for, flash
-import requests, json, subprocess, logging
+import requests, json, subprocess, logging, os
 from urllib.parse import quote
 
 app = Flask(__name__)
 app.secret_key = "CHANGE_THIS_SECRET"  # Change for production
 
-# Configure logging to output timestamp, log level, and message
+# Configure logging: timestamp, log level, and message.
 logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s [%(levelname)s] %(message)s"
 )
 
-# Log each incoming request
+# Log each incoming request.
 @app.before_request
 def log_request_info():
     logging.info(f"Incoming request: {request.method} {request.url}")
@@ -20,11 +20,7 @@ def log_request_info():
     if request.method == "POST":
         logging.debug(f"Form Data: {request.form}")
 
-# Path to the dezoomify executable.
-# (In Docker we expect the Linux binary to be installed at /usr/local/bin/dezoomify-rs)
-PATH_DEZOOMIFY = '/usr/local/bin/dezoomify-rs'
-
-# Mapping dictionary
+# Mapping dictionary.
 MS_MAPPING = {
     'Ay': {'number': 3005, 'name': 'Abury'},
     'Ae': {'number': 3010, 'name': 'Armidale'},
@@ -48,17 +44,23 @@ MS_MAPPING = {
     'Wa': {'number': 3115, 'name': 'Wilcannia'}
 }
 
-# Instead of hardcoding the URL template with slashes, we now encode the path segment.
-# This function constructs the info.json URL correctly.
+# URL construction functions.
 def construct_url(file_source, mid_range, mid_number, filename):
-    # Build the path segment: "eirCP/{file_source}/{mid_range}/{mid_number}/{filename}.jp2"
+    """
+    Constructs the info URL by building a path segment and percent‑encoding it.
+    For example, the segment:
+      eirCP/BS/1-100/15/BS_650_1538J1.jp2
+    becomes:
+      eirCP%2FBS%2F1-100%2F15%2FBS_650_1538J1.jp2
+    and the final URL is:
+      https://api.lrsnative.com.au/hlrv/iiif/2/eirCP%2FBS%2F1-100%2F15%2FBS_650_1538J1.jp2/info.json
+    """
     path_segment = f"eirCP/{file_source}/{mid_range}/{mid_number}/{filename}.jp2"
-    encoded_segment = quote(path_segment, safe='')  # encode all characters (including '/')
+    encoded_segment = quote(path_segment, safe='')  # encode all characters
     url = f"https://api.lrsnative.com.au/hlrv/iiif/2/{encoded_segment}/info.json"
     logging.debug(f"Constructed info URL: {url}")
     return url
 
-# Similarly, construct the preview URL
 def construct_preview_url(file_source, mid_range, mid_number, filename):
     path_segment = f"eirCP/{file_source}/{mid_range}/{mid_number}/{filename}.jp2"
     encoded_segment = quote(path_segment, safe='')
@@ -72,7 +74,7 @@ def get_small_number(ms):
     return num
 
 def fetch_url(mid_number, file_source, file_big, file_small, file_end):
-    # Calculate the mid_range (e.g., "1-100", "101-200", etc.)
+    # Calculate mid_range (e.g., "1-100", "101-200", etc.)
     mid_range = f'{((mid_number - 1) // 100) * 100 + 1}-{(((mid_number - 1) // 100) + 1) * 100}'
     filename = f'{file_source}_{file_big}_{file_small}{file_end}'
     url_info = construct_url(file_source, mid_range, mid_number, filename)
@@ -85,8 +87,8 @@ def fetch_url(mid_number, file_source, file_big, file_small, file_end):
         return mid_number, 0, url_info, ""
     return mid_number, response.status_code, url_info, response.text
 
-def download_image(url_info, mid_file, preview, preview_only, file_source, file_big, file_small, file_end, mid_number):
-    # Calculate mid_range for preview URL construction
+def download_image(url_info, mid_file, preview, preview_only, file_source, file_big, file_small, file_end, mid_number, info_json_text):
+    # Calculate mid_range for preview URL construction.
     mid_range = f'{((mid_number - 1) // 100) * 100 + 1}-{(((mid_number - 1) // 100) + 1) * 100}'
     if preview:
         preview_url = construct_preview_url(file_source, mid_range, mid_number, f'{file_source}_{file_big}_{file_small}{file_end}')
@@ -95,21 +97,34 @@ def download_image(url_info, mid_file, preview, preview_only, file_source, file_
     if preview_only:
         logging.info(f"Preview only mode: skipping download for {mid_file}.jpg")
         return f"Preview only mode: skipping download for {mid_file}.jpg<br>"
-    logging.info(f"Starting dezoomify for mid_number {mid_number}, saving to {mid_file}.jpg")
-    result = subprocess.run([PATH_DEZOOMIFY, '-l', url_info, f'{mid_file}.jpg'], capture_output=True)
+    
+    # Save the modified info JSON to a temporary file.
+    temp_filename = f"/tmp/info_{mid_number}.json"
+    try:
+        with open(temp_filename, "w") as f:
+            f.write(info_json_text)
+        file_info_path = os.path.abspath(temp_filename)
+        logging.info(f"Saved modified info JSON to {file_info_path}")
+    except Exception as e:
+        logging.error(f"Error writing modified info JSON to {temp_filename}: {e}")
+        return f"Error writing modified info JSON: {e}<br>"
+    
+    # Call the new iiif-download command-line tool.
+    logging.info(f"Starting iiif-download for mid_number {mid_number}, saving to {mid_file}.jpg using info file {file_info_path}")
+    result = subprocess.run(["iiif-download", file_info_path, f"{mid_file}.jpg"], capture_output=True)
     if result.returncode != 0:
         error_message = result.stderr.decode()
-        logging.error(f"dezoomify error for {mid_file}.jpg: {error_message}")
-        return f'Error during dezoomify execution: {error_message}<br>'
+        logging.error(f"iiif-download error for {mid_file}.jpg: {error_message}")
+        return f'Error during iiif-download execution: {error_message}<br>'
     else:
-        logging.info(f"dezoomify succeeded for {mid_file}.jpg")
+        logging.info(f"iiif-download succeeded for {mid_file}.jpg")
         return f'Image successfully saved to {mid_file}.jpg<br>'
 
 def search_and_download(file_source, file_big, file_small, file_end, start_number, end_number, preview, preview_only):
     found = False
     message = ""
     logging.info(f"Starting search_and_download with file_source={file_source}, file_big={file_big}, file_small={file_small}, file_end={file_end}, start_number={start_number}, end_number={end_number}, preview={preview}, preview_only={preview_only}")
-    # Loop through candidate mid_numbers
+    # Loop through candidate mid_numbers.
     for mid_number in range(start_number, end_number):
         logging.debug(f"Trying mid_number: {mid_number}")
         mid_number, status_code, url_info, response_text = fetch_url(mid_number, file_source, file_big, file_small, file_end)
@@ -123,12 +138,27 @@ def search_and_download(file_source, file_big, file_small, file_end, start_numbe
                 message += f"Found image at {url_info}<br>"
                 message += f"Image is {max_width}x{max_height} = {max_mp}MP<br>"
                 logging.debug(f"Image dimensions: {max_width}x{max_height} ({max_mp}MP)")
+                
+                # Modify the info JSON so that tile requests use jpg instead of png.
+                if ("profile" in image_json and 
+                    isinstance(image_json["profile"], list) and 
+                    len(image_json["profile"]) > 1 and 
+                    isinstance(image_json["profile"][1], dict) and 
+                    "formats" in image_json["profile"][1]):
+                    current_formats = image_json["profile"][1]["formats"]
+                    logging.info(f"Current formats in info JSON: {current_formats}. Changing to ['jpg'].")
+                    image_json["profile"][1]["formats"] = ["jpg"]
+                else:
+                    logging.warning("Could not find 'formats' in the expected location in info JSON.")
+                
+                modified_info_text = json.dumps(image_json)
             except Exception as e:
                 logging.error(f"Error parsing JSON for mid_number {mid_number}: {e}")
                 message += f"Error parsing JSON for mid_number {mid_number}: {str(e)}<br>"
                 continue
             mid_file = f'{file_source}_{file_big}_{file_small}{file_end}'
-            message += download_image(url_info, mid_file, preview, preview_only, file_source, file_big, file_small, file_end, mid_number)
+            message += download_image(url_info, mid_file, preview, preview_only,
+                                      file_source, file_big, file_small, file_end, mid_number, modified_info_text)
             found = True
             break
         else:
@@ -142,7 +172,7 @@ def search_and_download(file_source, file_big, file_small, file_end, start_numbe
 @app.route("/", methods=["GET", "POST"])
 def index():
     if request.method == "POST":
-        # Get form inputs
+        # Get form inputs.
         file_source = request.form.get("file_source")
         file_big = request.form.get("file_big")
         file_small = request.form.get("file_small")
@@ -159,7 +189,7 @@ def index():
         preview_only = (request.form.get("preview_only") == "on")
         file_end = f'P{file_sheet}J{file_part}' if file_sheet else f'J{file_part}'
         logging.info(f"Form data received: file_source={file_source}, file_big={file_big}, file_small={file_small}, sheet={file_sheet}, part={file_part}, start_number={start_number}, end_number={end_number}, preview={preview}, preview_only={preview_only}")
-        # Convert file_small if necessary using MS_MAPPING
+        # If file_small isn’t numeric, convert it using the MS_MAPPING lookup.
         if not any(char.isdigit() for char in file_small):
             num = get_small_number(file_small)
             if not num:
@@ -169,7 +199,6 @@ def index():
             else:
                 file_small = str(num)
                 logging.info(f"Converted file_small using MS_MAPPING: {file_small}")
-        # Call our search-and-download routine.
         found, message = search_and_download(file_source, file_big, file_small, file_end,
                                              start_number, end_number, preview, preview_only)
         if not found:

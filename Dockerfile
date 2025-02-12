@@ -1,40 +1,27 @@
 # Use an official Python runtime as a parent image
 FROM python:3.9-slim
 
-# Set environment variables
+# Set environment variables to prevent .pyc files and enable unbuffered output
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# Install dependencies needed for building and downloading
+# Install system dependencies if needed
 RUN apt-get update && apt-get install -y \
     gcc \
     wget \
     tar \
     && rm -rf /var/lib/apt/lists/*
 
-# Download and install dezoomify-rs from the provided tarball URL
-# local version used to use 2.6.5 but can't run here
-# latest version 2.13.0 works but uses png so fails
-# 2.9.4 is min version which works but still png (create releases from ubuntu 20.04 instead of 18.04)
-# 2.9.3 doesn't work, still png
-# 2.7.2 doesn't work but max version with jpg
-# 2.6.5 doesn't work but uses jpg and was local version
-RUN wget https://github.com/lovasoa/dezoomify-rs/releases/download/v2.7.2/dezoomify-rs-linux.tgz && \
-    tar -xzf dezoomify-rs-linux.tgz && \
-    rm dezoomify-rs-linux.tgz && \
-    chmod +x dezoomify-rs && \
-    mv dezoomify-rs /usr/local/bin/dezoomify-rs
-
-# Copy Python dependencies and install them
+# Copy requirements.txt and install Python dependencies.
 COPY requirements.txt .
 RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the application code
+# Copy the rest of your application code.
 COPY . .
 
 EXPOSE 5000
 
-# Run the application with gunicorn
+# Run the application using gunicorn with an increased timeout.
 CMD ["gunicorn", "--timeout", "120", "-b", "0.0.0.0:5000", "app:app"]

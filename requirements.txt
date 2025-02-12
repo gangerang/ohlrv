@@ -1,4 +1,5 @@
 Flask==2.1.2
-requests==2.31.0
+requests==2.32.0
 gunicorn==20.1.0
 Werkzeug==2.0.3
+iiif-download==0.1.10
