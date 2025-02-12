@@ -1,5 +1,5 @@
-# Use an official Python runtime as a parent image
-FROM python:3.9-slim
+# Use Debian Buster slim as base image
+FROM debian:buster-slim
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -7,20 +7,19 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# Install dependencies needed for building and downloading
-RUN apt-get update && apt-get install -y \
-    gcc \
+# Install Python and dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    python3 \
+    python3-pip \
     wget \
     tar \
     && rm -rf /var/lib/apt/lists/*
 
+# Make python3 the default python
+RUN ln -s /usr/bin/python3 /usr/bin/python
+
 # Download and install dezoomify-rs from the provided tarball URL
-# local version used to use 2.6.5 but can't run here
-# latest version 2.13.0 works but uses png so fails
-# 2.9.4 is min version which works but still png (create releases from ubuntu 20.04 instead of 18.04)
-# 2.9.3 doesn't work, still png
-# 2.7.2 doesn't work but max version with jpg
-# 2.6.5 doesn't work but uses jpg and was local version
 RUN wget https://github.com/lovasoa/dezoomify-rs/releases/download/v2.7.2/dezoomify-rs-linux.tgz && \
     tar -xzf dezoomify-rs-linux.tgz && \
     rm dezoomify-rs-linux.tgz && \
@@ -29,7 +28,7 @@ RUN wget https://github.com/lovasoa/dezoomify-rs/releases/download/v2.7.2/dezoom
 
 # Copy Python dependencies and install them
 COPY requirements.txt .
-RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
+RUN pip3 install --upgrade pip && pip3 install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the application code
 COPY . .
