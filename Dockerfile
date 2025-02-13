@@ -23,11 +23,7 @@ RUN apt-get update && apt-get install -y \
 # 2.6.5 doesn't work but uses jpg and was local version
 RUN wget -O dezoomify-rs https://github.com/jnflint/dezoomify-jf/releases/download/v2.13.1beta/dezoomify-rs
 
-RUN ls -a
-
 RUN chmod +x dezoomify-rs
-
-RUN ./dezoomify-rs --version
 
 RUN mv dezoomify-rs /usr/local/bin/dezoomify-rs
 
