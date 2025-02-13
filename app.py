@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-from flask import Flask, render_template, request, redirect, url_for, flash
-import requests, json, subprocess, logging
+from flask import Flask, render_template, request, redirect, url_for, flash, send_file
+import requests, json, subprocess, logging, os
 from urllib.parse import quote
 
 app = Flask(__name__)
@@ -48,17 +48,15 @@ MS_MAPPING = {
     'Wa': {'number': 3115, 'name': 'Wilcannia'}
 }
 
-# Instead of hardcoding the URL template with slashes, we now encode the path segment.
-# This function constructs the info.json URL correctly.
+# Construct the info.json URL by percent-encoding the IIIF image path
 def construct_url(file_source, mid_range, mid_number, filename):
-    # Build the path segment: "eirCP/{file_source}/{mid_range}/{mid_number}/{filename}.jp2"
     path_segment = f"eirCP/{file_source}/{mid_range}/{mid_number}/{filename}.jp2"
-    encoded_segment = quote(path_segment, safe='')  # encode all characters (including '/')
+    encoded_segment = quote(path_segment, safe='')  # encode all characters
     url = f"https://api.lrsnative.com.au/hlrv/iiif/2/{encoded_segment}/info.json"
     logging.debug(f"Constructed info URL: {url}")
     return url
 
-# Similarly, construct the preview URL
+# Construct the preview URL
 def construct_preview_url(file_source, mid_range, mid_number, filename):
     path_segment = f"eirCP/{file_source}/{mid_range}/{mid_number}/{filename}.jp2"
     encoded_segment = quote(path_segment, safe='')
@@ -72,7 +70,7 @@ def get_small_number(ms):
     return num
 
 def fetch_url(mid_number, file_source, file_big, file_small, file_end):
-    # Calculate the mid_range (e.g., "1-100", "101-200", etc.)
+    # Calculate mid_range (e.g., "1-100", "101-200", etc.)
     mid_range = f'{((mid_number - 1) // 100) * 100 + 1}-{(((mid_number - 1) // 100) + 1) * 100}'
     filename = f'{file_source}_{file_big}_{file_small}{file_end}'
     url_info = construct_url(file_source, mid_range, mid_number, filename)
@@ -94,22 +92,22 @@ def download_image(url_info, mid_file, preview, preview_only, file_source, file_
         flash(f'Preview image: <a href="{preview_url}" target="_blank">{preview_url}</a>', 'info')
     if preview_only:
         logging.info(f"Preview only mode: skipping download for {mid_file}.jpg")
-        return f"Preview only mode: skipping download for {mid_file}.jpg<br>"
+        return None, f"Preview only mode: skipping download for {mid_file}.jpg<br>"
     logging.info(f"Starting dezoomify for mid_number {mid_number}, saving to {mid_file}.jpg")
     result = subprocess.run([PATH_DEZOOMIFY, '-l', url_info, f'{mid_file}.jpg'], capture_output=True)
     if result.returncode != 0:
         error_message = result.stderr.decode()
         logging.error(f"dezoomify error for {mid_file}.jpg: {error_message}")
-        return f'Error during dezoomify execution: {error_message}<br>'
+        return None, f'Error during dezoomify execution: {error_message}<br>'
     else:
         logging.info(f"dezoomify succeeded for {mid_file}.jpg")
-        return f'Image successfully saved to {mid_file}.jpg<br>'
+        return f"{mid_file}.jpg", f'Image successfully saved to {mid_file}.jpg<br>'
 
 def search_and_download(file_source, file_big, file_small, file_end, start_number, end_number, preview, preview_only):
     found = False
     message = ""
+    downloaded_file = None
     logging.info(f"Starting search_and_download with file_source={file_source}, file_big={file_big}, file_small={file_small}, file_end={file_end}, start_number={start_number}, end_number={end_number}, preview={preview}, preview_only={preview_only}")
-    # Loop through candidate mid_numbers
     for mid_number in range(start_number, end_number):
         logging.debug(f"Trying mid_number: {mid_number}")
         mid_number, status_code, url_info, response_text = fetch_url(mid_number, file_source, file_big, file_small, file_end)
@@ -128,21 +126,23 @@ def search_and_download(file_source, file_big, file_small, file_end, start_numbe
                 message += f"Error parsing JSON for mid_number {mid_number}: {str(e)}<br>"
                 continue
             mid_file = f'{file_source}_{file_big}_{file_small}{file_end}'
-            message += download_image(url_info, mid_file, preview, preview_only, file_source, file_big, file_small, file_end, mid_number)
-            found = True
-            break
+            downloaded_file, dl_message = download_image(url_info, mid_file, preview, preview_only,
+                                                          file_source, file_big, file_small, file_end, mid_number)
+            message += dl_message
+            if downloaded_file:
+                found = True
+                break
         else:
             logging.debug(f"mid_number {mid_number} returned status {status_code}")
     if not found:
         message += "No image found with the provided parameters.<br>"
         logging.warning("Search completed: no valid image found.")
     logging.info("Finished search_and_download")
-    return found, message
+    return found, message, downloaded_file
 
 @app.route("/", methods=["GET", "POST"])
 def index():
     if request.method == "POST":
-        # Get form inputs
         file_source = request.form.get("file_source")
         file_big = request.form.get("file_big")
         file_small = request.form.get("file_small")
@@ -159,7 +159,6 @@ def index():
         preview_only = (request.form.get("preview_only") == "on")
         file_end = f'P{file_sheet}J{file_part}' if file_sheet else f'J{file_part}'
         logging.info(f"Form data received: file_source={file_source}, file_big={file_big}, file_small={file_small}, sheet={file_sheet}, part={file_part}, start_number={start_number}, end_number={end_number}, preview={preview}, preview_only={preview_only}")
-        # Convert file_small if necessary using MS_MAPPING
         if not any(char.isdigit() for char in file_small):
             num = get_small_number(file_small)
             if not num:
@@ -169,14 +168,14 @@ def index():
             else:
                 file_small = str(num)
                 logging.info(f"Converted file_small using MS_MAPPING: {file_small}")
-        # Call our search-and-download routine.
-        found, message = search_and_download(file_source, file_big, file_small, file_end,
-                                             start_number, end_number, preview, preview_only)
-        if not found:
-            message += "No results found with provided parameters. "
-            logging.warning("No results found with provided parameters.")
+        found, message, downloaded_file = search_and_download(file_source, file_big, file_small, file_end,
+                                                              start_number, end_number, preview, preview_only)
         flash(message, 'info')
-        return redirect(url_for("index"))
+        if found and downloaded_file:
+            # Send the file to the browser as a download.
+            return send_file(downloaded_file, as_attachment=True)
+        else:
+            return redirect(url_for("index"))
     return render_template("index.html")
 
 if __name__ == "__main__":
