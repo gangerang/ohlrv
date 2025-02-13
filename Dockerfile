@@ -21,11 +21,15 @@ RUN apt-get update && apt-get install -y \
 # 2.9.3 doesn't work, still png
 # 2.7.2 doesn't work but max version with jpg
 # 2.6.5 doesn't work but uses jpg and was local version
-RUN wget https://github.com/lovasoa/dezoomify-rs/releases/download/v2.7.2/dezoomify-rs-linux.tgz && \
-    tar -xzf dezoomify-rs-linux.tgz && \
-    rm dezoomify-rs-linux.tgz && \
-    chmod +x dezoomify-rs && \
-    mv dezoomify-rs /usr/local/bin/dezoomify-rs
+RUN wget -O dezoomify-rs https://github.com/jnflint/dezoomify-jf/releases/download/v2.13.1beta/dezoomify-rs
+
+RUN ls -a
+
+RUN chmod +x dezoomify-rs
+
+RUN ./dezoomify-rs --version
+
+RUN mv dezoomify-rs /usr/local/bin/dezoomify-rs
 
 # Copy Python dependencies and install them
 COPY requirements.txt .
