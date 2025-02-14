@@ -4,6 +4,7 @@ import requests, json, subprocess, logging, os, time
 from urllib.parse import quote
 
 app = Flask(__name__)
+app.secret_key = "CHANGE_THIS_SECRET"  # Change for production
 
 # Configure logging to output timestamp, log level, and message.
 logging.basicConfig(
