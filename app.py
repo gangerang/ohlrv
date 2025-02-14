@@ -83,6 +83,7 @@ def fetch_url(mid_number, file_source, file_big, file_small, file_end):
     return mid_number, response.status_code, url_info, response.text
 
 def download_image(url_info, mid_file, preview, preview_only, file_source, file_big, file_small, file_end, mid_number, manifest_text):
+    # Calculate mid_range for preview URL construction.
     mid_range = f'{((mid_number - 1) // 100) * 100 + 1}-{(((mid_number - 1) // 100) + 1) * 100}'
     if preview:
         preview_url = construct_preview_url(file_source, mid_range, mid_number, f'{file_source}_{file_big}_{file_small}{file_end}')
@@ -92,19 +93,23 @@ def download_image(url_info, mid_file, preview, preview_only, file_source, file_
         logging.info(f"Preview only mode: skipping download for {mid_file}.jpg")
         return None, f"Preview only mode: skipping download for {mid_file}.jpg<br>"
     
-    # Write modified manifest JSON to a temporary file.
+    # Write the modified manifest JSON to a temporary file.
     temp_manifest = f"/tmp/manifest_{mid_number}.json"
     try:
         with open(temp_manifest, "w") as f:
             f.write(manifest_text)
-        manifest_url = "file://" + os.path.abspath(temp_manifest)
-        logging.info(f"Saved modified manifest to {manifest_url}")
+        abs_manifest = os.path.abspath(temp_manifest)
+        # Confirm the file exists.
+        if not os.path.exists(abs_manifest):
+            raise Exception(f"Manifest file not found at {abs_manifest}")
+        logging.info(f"Manifest file created at: {abs_manifest}")
     except Exception as e:
         logging.error(f"Error writing manifest to {temp_manifest}: {e}")
         return None, f"Error writing manifest: {e}<br>"
     
-    logging.info(f"Starting dezoomify for mid_number {mid_number}, saving to {mid_file}.jpg using manifest {manifest_url}")
-    result = subprocess.run([PATH_DEZOOMIFY, '-l', manifest_url, f'{mid_file}.jpg', '--logging', 'debug'], capture_output=True)
+    logging.info(f"Starting dezoomify for mid_number {mid_number}, saving to {mid_file}.jpg using manifest {abs_manifest}")
+    # Pass the absolute file path (without file://) to dezoomify.
+    result = subprocess.run([PATH_DEZOOMIFY, '-l', abs_manifest, f'{mid_file}.jpg'], capture_output=True)
     if result.returncode != 0:
         error_message = result.stderr.decode()
         logging.error(f"dezoomify error for {mid_file}.jpg: {error_message}")
