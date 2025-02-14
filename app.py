@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-from flask import Flask, render_template, request, redirect, url_for, flash
-import requests, json, subprocess, logging
+from flask import Flask, render_template, request, redirect, url_for, flash, send_file
+import requests, json, subprocess, logging, os
 from urllib.parse import quote
 
 app = Flask(__name__)
@@ -85,8 +85,8 @@ def fetch_url(mid_number, file_source, file_big, file_small, file_end):
         return mid_number, 0, url_info, ""
     return mid_number, response.status_code, url_info, response.text
 
-def download_image(url_info, mid_file, preview, preview_only, file_source, file_big, file_small, file_end, mid_number):
-    # Calculate mid_range for preview URL construction
+def download_image(url_info, mid_file, preview, preview_only, file_source, file_big, file_small, file_end, mid_number, manifest_text):
+    # Calculate mid_range for preview URL construction.
     mid_range = f'{((mid_number - 1) // 100) * 100 + 1}-{(((mid_number - 1) // 100) + 1) * 100}'
     if preview:
         preview_url = construct_preview_url(file_source, mid_range, mid_number, f'{file_source}_{file_big}_{file_small}{file_end}')
@@ -94,22 +94,35 @@ def download_image(url_info, mid_file, preview, preview_only, file_source, file_
         flash(f'Preview image: <a href="{preview_url}" target="_blank">{preview_url}</a>', 'info')
     if preview_only:
         logging.info(f"Preview only mode: skipping download for {mid_file}.jpg")
-        return f"Preview only mode: skipping download for {mid_file}.jpg<br>"
-    logging.info(f"Starting dezoomify for mid_number {mid_number}, saving to {mid_file}.jpg")
-    result = subprocess.run([PATH_DEZOOMIFY, '-l', url_info, f'{mid_file}.jpg'], capture_output=True)
+        return None, f"Preview only mode: skipping download for {mid_file}.jpg<br>"
+    
+    # Write the modified manifest JSON to a temporary file.
+    temp_manifest = f"/tmp/manifest_{mid_number}.json"
+    try:
+        with open(temp_manifest, "w") as f:
+            f.write(manifest_text)
+        manifest_url = "file://" + os.path.abspath(temp_manifest)
+        logging.info(f"Saved modified manifest to {manifest_url}")
+    except Exception as e:
+        logging.error(f"Error writing manifest to {temp_manifest}: {e}")
+        return None, f"Error writing manifest: {e}<br>"
+    
+    logging.info(f"Starting dezoomify for mid_number {mid_number}, saving to {mid_file}.jpg using manifest {manifest_url}")
+    result = subprocess.run([PATH_DEZOOMIFY, '-l', manifest_url, f'{mid_file}.jpg'], capture_output=True)
     if result.returncode != 0:
         error_message = result.stderr.decode()
         logging.error(f"dezoomify error for {mid_file}.jpg: {error_message}")
-        return f'Error during dezoomify execution: {error_message}<br>'
+        return None, f'Error during dezoomify execution: {error_message}<br>'
     else:
         logging.info(f"dezoomify succeeded for {mid_file}.jpg")
-        return f'Image successfully saved to {mid_file}.jpg<br>'
+        return f"{mid_file}.jpg", f'Image successfully saved to {mid_file}.jpg<br>'
 
 def search_and_download(file_source, file_big, file_small, file_end, start_number, end_number, preview, preview_only):
     found = False
     message = ""
+    downloaded_file = None
     logging.info(f"Starting search_and_download with file_source={file_source}, file_big={file_big}, file_small={file_small}, file_end={file_end}, start_number={start_number}, end_number={end_number}, preview={preview}, preview_only={preview_only}")
-    # Loop through candidate mid_numbers
+    # Loop through candidate mid_numbers.
     for mid_number in range(start_number, end_number):
         logging.debug(f"Trying mid_number: {mid_number}")
         mid_number, status_code, url_info, response_text = fetch_url(mid_number, file_source, file_big, file_small, file_end)
@@ -123,21 +136,30 @@ def search_and_download(file_source, file_big, file_small, file_end, start_numbe
                 message += f"Found image at {url_info}<br>"
                 message += f"Image is {max_width}x{max_height} = {max_mp}MP<br>"
                 logging.debug(f"Image dimensions: {max_width}x{max_height} ({max_mp}MP)")
+                # Modify the manifest JSON as required:
+                if "profile" in image_json and isinstance(image_json["profile"], list) and len(image_json["profile"]) >= 2:
+                    image_json["profile"][0] = "http://iiif.io/api/image/2/level1.json"
+                    if isinstance(image_json["profile"][1], dict) and "formats" in image_json["profile"][1]:
+                        image_json["profile"][1]["formats"] = ["jpg"]
+                modified_manifest = json.dumps(image_json)
             except Exception as e:
                 logging.error(f"Error parsing JSON for mid_number {mid_number}: {e}")
                 message += f"Error parsing JSON for mid_number {mid_number}: {str(e)}<br>"
                 continue
             mid_file = f'{file_source}_{file_big}_{file_small}{file_end}'
-            message += download_image(url_info, mid_file, preview, preview_only, file_source, file_big, file_small, file_end, mid_number)
-            found = True
-            break
+            downloaded_file, dl_msg = download_image(url_info, mid_file, preview, preview_only,
+                                                     file_source, file_big, file_small, file_end, mid_number, modified_manifest)
+            message += dl_msg
+            if downloaded_file:
+                found = True
+                break
         else:
             logging.debug(f"mid_number {mid_number} returned status {status_code}")
     if not found:
         message += "No image found with the provided parameters.<br>"
         logging.warning("Search completed: no valid image found.")
     logging.info("Finished search_and_download")
-    return found, message
+    return found, message, downloaded_file
 
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -169,14 +191,13 @@ def index():
             else:
                 file_small = str(num)
                 logging.info(f"Converted file_small using MS_MAPPING: {file_small}")
-        # Call our search-and-download routine.
-        found, message = search_and_download(file_source, file_big, file_small, file_end,
-                                             start_number, end_number, preview, preview_only)
-        if not found:
-            message += "No results found with provided parameters. "
-            logging.warning("No results found with provided parameters.")
+        found, message, downloaded_file = search_and_download(file_source, file_big, file_small, file_end,
+                                                              start_number, end_number, preview, preview_only)
         flash(message, 'info')
-        return redirect(url_for("index"))
+        if found and downloaded_file:
+            return send_file(downloaded_file, as_attachment=True)
+        else:
+            return redirect(url_for("index"))
     return render_template("index.html")
 
 if __name__ == "__main__":
