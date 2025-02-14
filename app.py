@@ -173,7 +173,9 @@ def index():
         flash(message, 'info')
         if found and downloaded_file:
             # Send the file to the browser as a download.
-            return send_file(downloaded_file, as_attachment=True)
+            response = send_file(downloaded_file, as_attachment=True)
+            response.call_on_close(lambda: os.remove(downloaded_file))
+            return response
         else:
             return redirect(url_for("index"))
     return render_template("index.html")
