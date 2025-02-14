@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 from flask import Flask, render_template, request, redirect, url_for, flash, send_file
-import requests, json, subprocess, logging, os, time
+import requests, json, subprocess, logging, os
 from urllib.parse import quote
 
 app = Flask(__name__)
-app.secret_key = "CHANGE_THIS_SECRET"  # Change for production
+# (Removed secret_key)
 
 # Configure logging to output timestamp, log level, and message.
 logging.basicConfig(
@@ -91,9 +91,11 @@ def download_image(url_info, mid_file_base, preview, preview_only, file_source, 
         logging.info(f"Preview only mode: skipping download for {mid_file_base}.jpg")
         return None, f"Preview only mode: skipping download for {mid_file_base}.jpg<br>"
     
-    # Generate a Unix timestamp rounded to the nearest 10 seconds.
-    timestamp = str(round(time.time() / 10) * 10)
-    desired_file = f"{mid_file_base}_{timestamp}.jpg"
+    desired_file = f"{mid_file_base}.jpg"
+    # First, check if the file already exists.
+    if os.path.exists(desired_file):
+        logging.info(f"File {desired_file} already exists. Reusing it.")
+        return desired_file, f"Image already downloaded as {desired_file}<br>"
     
     temp_manifest = f"/tmp/manifest_{mid_number}.json"
     try:
@@ -135,7 +137,6 @@ def search_and_download(file_source, file_big, file_small, file_end, start_numbe
                 message += f"Found image at {url_info}<br>"
                 message += f"Image is {max_width}x{max_height} = {max_mp}MP<br>"
                 logging.debug(f"Image dimensions: {max_width}x{max_height} ({max_mp}MP)")
-                # Modify the manifest JSON as required.
                 if "profile" in image_json and isinstance(image_json["profile"], list) and len(image_json["profile"]) >= 2:
                     image_json["profile"][0] = "http://iiif.io/api/image/2/level1.json"
                     if isinstance(image_json["profile"][1], dict) and "formats" in image_json["profile"][1]:
