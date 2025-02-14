@@ -2,17 +2,18 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, send_file
 import requests, json, subprocess, logging, os
 from urllib.parse import quote
+from datetime import datetime
 
 app = Flask(__name__)
 app.secret_key = "CHANGE_THIS_SECRET"  # Change for production
 
-# Configure logging to output timestamp, log level, and message
+# Configure logging to output timestamp, log level, and message.
 logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s [%(levelname)s] %(message)s"
 )
 
-# Log each incoming request
+# Log each incoming request.
 @app.before_request
 def log_request_info():
     logging.info(f"Incoming request: {request.method} {request.url}")
@@ -21,10 +22,9 @@ def log_request_info():
         logging.debug(f"Form Data: {request.form}")
 
 # Path to the dezoomify executable.
-# (In Docker we expect the Linux binary to be installed at /usr/local/bin/dezoomify-rs)
 PATH_DEZOOMIFY = '/usr/local/bin/dezoomify-rs'
 
-# Mapping dictionary
+# Mapping dictionary.
 MS_MAPPING = {
     'Ay': {'number': 3005, 'name': 'Abury'},
     'Ae': {'number': 3010, 'name': 'Armidale'},
@@ -48,15 +48,15 @@ MS_MAPPING = {
     'Wa': {'number': 3115, 'name': 'Wilcannia'}
 }
 
-# Construct the info.json URL by percent-encoding the IIIF image path
+# Construct the info.json URL by encoding the IIIF image path.
 def construct_url(file_source, mid_range, mid_number, filename):
     path_segment = f"eirCP/{file_source}/{mid_range}/{mid_number}/{filename}.jp2"
-    encoded_segment = quote(path_segment, safe='')  # encode all characters
+    encoded_segment = quote(path_segment, safe='')  # Encode all characters.
     url = f"https://api.lrsnative.com.au/hlrv/iiif/2/{encoded_segment}/info.json"
     logging.debug(f"Constructed info URL: {url}")
     return url
 
-# Construct the preview URL
+# Construct the preview URL.
 def construct_preview_url(file_source, mid_range, mid_number, filename):
     path_segment = f"eirCP/{file_source}/{mid_range}/{mid_number}/{filename}.jp2"
     encoded_segment = quote(path_segment, safe='')
@@ -70,10 +70,10 @@ def get_small_number(ms):
     return num
 
 def fetch_url(mid_number, file_source, file_big, file_small, file_end):
-    # Calculate mid_range (e.g., "1-100", "101-200", etc.)
     mid_range = f'{((mid_number - 1) // 100) * 100 + 1}-{(((mid_number - 1) // 100) + 1) * 100}'
-    filename = f'{file_source}_{file_big}_{file_small}{file_end}'
-    url_info = construct_url(file_source, mid_range, mid_number, filename)
+    # Base filename without timestamp.
+    base_filename = f'{file_source}_{file_big}_{file_small}{file_end}'
+    url_info = construct_url(file_source, mid_range, mid_number, base_filename)
     logging.info(f"Fetching info for mid_number {mid_number} from URL: {url_info}")
     try:
         response = requests.get(url_info, verify=True, timeout=10)
@@ -83,25 +83,42 @@ def fetch_url(mid_number, file_source, file_big, file_small, file_end):
         return mid_number, 0, url_info, ""
     return mid_number, response.status_code, url_info, response.text
 
-def download_image(url_info, mid_file, preview, preview_only, file_source, file_big, file_small, file_end, mid_number):
-    # Calculate mid_range for preview URL construction
+def download_image(url_info, mid_file_base, preview, preview_only, file_source, file_big, file_small, file_end, mid_number, manifest_text):
     mid_range = f'{((mid_number - 1) // 100) * 100 + 1}-{(((mid_number - 1) // 100) + 1) * 100}'
     if preview:
         preview_url = construct_preview_url(file_source, mid_range, mid_number, f'{file_source}_{file_big}_{file_small}{file_end}')
         logging.info(f"Preview URL for mid_number {mid_number}: {preview_url}")
         flash(f'Preview image: <a href="{preview_url}" target="_blank">{preview_url}</a>', 'info')
     if preview_only:
-        logging.info(f"Preview only mode: skipping download for {mid_file}.jpg")
-        return None, f"Preview only mode: skipping download for {mid_file}.jpg<br>"
-    logging.info(f"Starting dezoomify for mid_number {mid_number}, saving to {mid_file}.jpg")
-    result = subprocess.run([PATH_DEZOOMIFY, '-l', url_info, f'{mid_file}.jpg'], capture_output=True)
+        logging.info(f"Preview only mode: skipping download for {mid_file_base}.jpg")
+        return None, f"Preview only mode: skipping download for {mid_file_base}.jpg<br>"
+    
+    # Append a timestamp to the filename to make it unique.
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    desired_file = f"{mid_file_base}_{timestamp}.jpg"
+    
+    # Write the modified manifest JSON to a temporary file.
+    temp_manifest = f"/tmp/manifest_{mid_number}.json"
+    try:
+        with open(temp_manifest, "w") as f:
+            f.write(manifest_text)
+        abs_manifest = os.path.abspath(temp_manifest)
+        if not os.path.exists(abs_manifest):
+            raise Exception(f"Manifest file not found at {abs_manifest}")
+        logging.info(f"Manifest file created at: {abs_manifest}")
+    except Exception as e:
+        logging.error(f"Error writing manifest to {temp_manifest}: {e}")
+        return None, f"Error writing manifest: {e}<br>"
+    
+    logging.info(f"Starting dezoomify for mid_number {mid_number}, saving to {desired_file} using manifest {abs_manifest}")
+    result = subprocess.run([PATH_DEZOOMIFY, '-l', abs_manifest, desired_file], capture_output=True)
     if result.returncode != 0:
         error_message = result.stderr.decode()
-        logging.error(f"dezoomify error for {mid_file}.jpg: {error_message}")
+        logging.error(f"dezoomify error for {desired_file}: {error_message}")
         return None, f'Error during dezoomify execution: {error_message}<br>'
     else:
-        logging.info(f"dezoomify succeeded for {mid_file}.jpg")
-        return f"{mid_file}.jpg", f'Image successfully saved to {mid_file}.jpg<br>'
+        logging.info(f"dezoomify succeeded for {desired_file}")
+        return desired_file, f'Image successfully saved to {desired_file}<br>'
 
 def search_and_download(file_source, file_big, file_small, file_end, start_number, end_number, preview, preview_only):
     found = False
@@ -121,14 +138,22 @@ def search_and_download(file_source, file_big, file_small, file_end, start_numbe
                 message += f"Found image at {url_info}<br>"
                 message += f"Image is {max_width}x{max_height} = {max_mp}MP<br>"
                 logging.debug(f"Image dimensions: {max_width}x{max_height} ({max_mp}MP)")
+                # Modify the manifest JSON as required.
+                if "profile" in image_json and isinstance(image_json["profile"], list) and len(image_json["profile"]) >= 2:
+                    image_json["profile"][0] = "http://iiif.io/api/image/2/level1.json"
+                    if isinstance(image_json["profile"][1], dict) and "formats" in image_json["profile"][1]:
+                        image_json["profile"][1]["formats"] = ["jpg"]
+                modified_manifest = json.dumps(image_json)
             except Exception as e:
                 logging.error(f"Error parsing JSON for mid_number {mid_number}: {e}")
                 message += f"Error parsing JSON for mid_number {mid_number}: {str(e)}<br>"
                 continue
-            mid_file = f'{file_source}_{file_big}_{file_small}{file_end}'
-            downloaded_file, dl_message = download_image(url_info, mid_file, preview, preview_only,
-                                                          file_source, file_big, file_small, file_end, mid_number)
-            message += dl_message
+            # Append a timestamp to the base filename.
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            mid_file_base = f'{file_source}_{file_big}_{file_small}{file_end}_{timestamp}'
+            downloaded_file, dl_msg = download_image(url_info, mid_file_base, preview, preview_only,
+                                                     file_source, file_big, file_small, file_end, mid_number, modified_manifest)
+            message += dl_msg
             if downloaded_file:
                 found = True
                 break
@@ -172,7 +197,6 @@ def index():
                                                               start_number, end_number, preview, preview_only)
         flash(message, 'info')
         if found and downloaded_file:
-            # Send the file to the browser as a download.
             response = send_file(downloaded_file, as_attachment=True)
             response.call_on_close(lambda: os.remove(downloaded_file))
             return response
@@ -181,5 +205,4 @@ def index():
     return render_template("index.html")
 
 if __name__ == "__main__":
-    logging.info("Starting Flask app")
     app.run(host="0.0.0.0", port=5000, debug=True)
