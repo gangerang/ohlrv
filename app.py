@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 from flask import Flask, render_template, request, redirect, url_for, flash, send_file
-import requests, json, subprocess, logging, os
+import requests, json, subprocess, logging, os, time
 from urllib.parse import quote
-from datetime import datetime
 
 app = Flask(__name__)
-app.secret_key = "CHANGE_THIS_SECRET"  # Change for production
 
 # Configure logging to output timestamp, log level, and message.
 logging.basicConfig(
@@ -51,7 +49,7 @@ MS_MAPPING = {
 # Construct the info.json URL by encoding the IIIF image path.
 def construct_url(file_source, mid_range, mid_number, filename):
     path_segment = f"eirCP/{file_source}/{mid_range}/{mid_number}/{filename}.jp2"
-    encoded_segment = quote(path_segment, safe='')  # Encode all characters.
+    encoded_segment = quote(path_segment, safe='')  # encode all characters.
     url = f"https://api.lrsnative.com.au/hlrv/iiif/2/{encoded_segment}/info.json"
     logging.debug(f"Constructed info URL: {url}")
     return url
@@ -71,7 +69,6 @@ def get_small_number(ms):
 
 def fetch_url(mid_number, file_source, file_big, file_small, file_end):
     mid_range = f'{((mid_number - 1) // 100) * 100 + 1}-{(((mid_number - 1) // 100) + 1) * 100}'
-    # Base filename without timestamp.
     base_filename = f'{file_source}_{file_big}_{file_small}{file_end}'
     url_info = construct_url(file_source, mid_range, mid_number, base_filename)
     logging.info(f"Fetching info for mid_number {mid_number} from URL: {url_info}")
@@ -93,11 +90,10 @@ def download_image(url_info, mid_file_base, preview, preview_only, file_source, 
         logging.info(f"Preview only mode: skipping download for {mid_file_base}.jpg")
         return None, f"Preview only mode: skipping download for {mid_file_base}.jpg<br>"
     
-    # Append a timestamp to the filename to make it unique.
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # Generate a Unix timestamp rounded to the nearest 10 seconds.
+    timestamp = str(round(time.time() / 10) * 10)
     desired_file = f"{mid_file_base}_{timestamp}.jpg"
     
-    # Write the modified manifest JSON to a temporary file.
     temp_manifest = f"/tmp/manifest_{mid_number}.json"
     try:
         with open(temp_manifest, "w") as f:
@@ -148,9 +144,7 @@ def search_and_download(file_source, file_big, file_small, file_end, start_numbe
                 logging.error(f"Error parsing JSON for mid_number {mid_number}: {e}")
                 message += f"Error parsing JSON for mid_number {mid_number}: {str(e)}<br>"
                 continue
-            # Append a timestamp to the base filename.
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            mid_file_base = f'{file_source}_{file_big}_{file_small}{file_end}_{timestamp}'
+            mid_file_base = f'{file_source}_{file_big}_{file_small}{file_end}'
             downloaded_file, dl_msg = download_image(url_info, mid_file_base, preview, preview_only,
                                                      file_source, file_big, file_small, file_end, mid_number, modified_manifest)
             message += dl_msg
