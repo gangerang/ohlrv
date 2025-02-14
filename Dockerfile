@@ -12,16 +12,18 @@ RUN apt-get update && apt-get install -y \
     gcc \
     wget \
     tar \
+    curl \
+    build-essential \
+    pkg-config \
+    libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Download and install dezoomify-rs from the provided tarball URL
-# local version used to use 2.6.5 but can't run here
-# latest version 2.13.0 works but uses png so fails
-# 2.9.4 is min version which works but still png (create releases from ubuntu 20.04 instead of 18.04)
-# 2.9.3 doesn't work, still png
-# 2.7.2 doesn't work but max version with jpg
-# 2.6.5 doesn't work but uses jpg and was local version
-RUN wget -O dezoomify-rs https://github.com/jnflint/dezoomify-jf/releases/download/v2.13.1beta/dezoomify-rs
+# Install Rust toolchain
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Compile and install dezoomify from the Git repository
+RUN cargo install --git https://github.com/jnflint/dezoomify-jf/releases/tag/v2.13.1beta
 
 RUN chmod +x dezoomify-rs
 
