@@ -53,9 +53,8 @@
           {% for doc in documents %}
             {% set source = doc._source %}
             <tr>
-              <td>
-                <input type="checkbox" name="selected" value="{{ doc._id }}" class="doc_checkbox" checked>
-              </td>
+              <!-- No "checked" attribute so each checkbox is unselected by default -->
+              <td><input type="checkbox" name="selected" value="{{ doc._id }}" class="doc_checkbox"></td>
               <td>{{ source.imageName }}</td>
               <td>{{ source.countyName }}</td>
               <td>{{ source.parishName }}</td>
@@ -103,7 +102,7 @@
   </div>
   
   <script>
-    // Toggle "Select All" functionality.
+    // "Select All" toggle functionality.
     document.getElementById('select_all').addEventListener('change', function() {
       var checkboxes = document.querySelectorAll('.doc_checkbox');
       for (var i = 0; i < checkboxes.length; i++) {
