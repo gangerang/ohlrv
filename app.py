@@ -26,8 +26,8 @@ app.jinja_env.filters['custom_quote'] = lambda s: quote(s, safe='')
 # Path to the dezoomify executable.
 PATH_DEZOOMIFY = '/usr/local/bin/dezoomify-rs'
 
-# --- Updated /search route (using NDJSON payload built from dictionaries) ---
-@app.route("/search", methods=["GET", "POST"])
+# --- Updated / route (using NDJSON payload built from dictionaries) ---
+@app.route("/", methods=["GET", "POST"])
 def search():
     if request.method == "POST":
         search_str = request.form.get("search_str")
@@ -210,7 +210,7 @@ def download_selected():
         return response
 
 # --- Existing index route (if needed) ---
-@app.route("/", methods=["GET", "POST"])
+@app.route("/manual", methods=["GET", "POST"])
 def index():
     return render_template("index.html")
 

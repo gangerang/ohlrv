@@ -35,17 +35,13 @@
             {% set source = doc._source %}
             <tr>
               <td>
-                <!-- All checkboxes are pre-selected -->
                 <input type="checkbox" name="selected" value="{{ doc._id }}" checked>
               </td>
               <td>{{ source.imageName }}</td>
               <td>{{ source.countyName }}</td>
               <td>{{ source.parishName }}</td>
               <td>{{ source.location }}</td>
-              <td>
-                {# Split off any time component (assumes a space separates date and time) #}
-                {{ source.dateCreated.split(" ")[0] }}
-              </td>
+              <td>{{ source.dateCreated.split(" ")[0] }}</td>
               <td>
                 {% if source.images and source.images|length > 0 %}
                   {% for image in source.images %}
