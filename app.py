@@ -122,21 +122,22 @@ def search():
             return redirect(url_for("search"))
     return render_template("search.html")
 
-
 # ---------------------------
 # New "Search within Parish" Route
 # ---------------------------
 @app.route("/search_within_parish", methods=["POST"])
 def search_within_parish():
+    # County is optional; parish is required.
     county = request.form.get("county", "").strip()
     parish = request.form.get("parish", "").strip()
-    collection_group = request.form.get("collection_group", "").strip()  # Expected: crown, parish, torrens
+    # The collection_group is now submitted via one of the three buttons.
+    collection_group = request.form.get("collection_group", "").strip()  # Expected: "parish", "crown", "torrens"
 
     if not parish:
-        flash("Please select a parish.", "danger")
+        flash("Please enter a parish.", "danger")
         return redirect(url_for("search"))
 
-    # Determine allowed collection IDs based on collection group.
+    # Determine allowed collection IDs based on the selected button.
     if collection_group == "crown":
         allowed_ids = [55, 31]
     elif collection_group == "torrens":
@@ -167,7 +168,7 @@ def search_within_parish():
             ]
         }
     }
-    # Change size from 20 to 10000
+    # Return up to 10,000 results.
     query_payload = {"query": main_query, "size": 10000}
     payload = json.dumps(pref_payload) + "\n" + json.dumps(query_payload) + "\n"
     headers = {
