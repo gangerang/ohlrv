@@ -33,64 +33,91 @@ PATH_DEZOOMIFY = '/usr/local/bin/dezoomify-rs'
 def search():
     if request.method == "POST":
         search_str = request.form.get("search_str")
-        search_type = request.form.get("search_type", "crown")  # "crown" or "volfol"
+        search_type = request.form.get("search_type", "crown")  # "crown", "volfol", or "parish"
+        collection_ids = request.form.get("collection_ids", "").strip()  # Optional field
+
         if not search_str:
             flash("Please provide a search term.", "danger")
             return redirect(url_for("search"))
-        
-        # For Vol Fol search, we use the provided search string directly
-        # and search the "volFol.lowercase" field.
+
+        # Determine the query text, target field, and size based on search type.
         if search_type == "volfol":
             query = search_str
             field_name = "volFol.lowercase"
-        else:
-            # For Crown Plan search, we prepend "CROWN PLAN " to the search term
-            # and search the "imageName.lowercase" field.
+            query_size = 20
+        elif search_type == "parish":
+            query = search_str
+            field_name = "parishName.lowercase"
+            query_size = 10000
+        else:  # crown plan
             query = f"CROWN PLAN {search_str}"
             field_name = "imageName.lowercase"
-        
-        # Build the NDJSON payload using dictionaries.
+            query_size = 20
+
         pref_payload = {"preference": "attributeSearch"}
-        query_payload = {
-            "query": {
-                "bool": {
-                    "must": [
-                        {
-                            "bool": {
-                                "must": {
-                                    "bool": {
-                                        "should": [
-                                            {
-                                                "multi_match": {
-                                                    "query": query,
-                                                    "fields": [field_name],
-                                                    "type": "best_fields",
-                                                    "operator": "or",
-                                                    "fuzziness": 0
-                                                }
-                                            },
-                                            {
-                                                "multi_match": {
-                                                    "query": query,
-                                                    "fields": [field_name],
-                                                    "type": "phrase_prefix",
-                                                    "operator": "or"
-                                                }
+
+        # Build the main query clause.
+        main_query = {
+            "bool": {
+                "must": [
+                    {
+                        "bool": {
+                            "must": {
+                                "bool": {
+                                    "should": [
+                                        {
+                                            "multi_match": {
+                                                "query": query,
+                                                "fields": [field_name],
+                                                "type": "best_fields",
+                                                "operator": "or",
+                                                "fuzziness": 0
                                             }
-                                        ],
-                                        "minimum_should_match": "1"
-                                    }
+                                        },
+                                        {
+                                            "multi_match": {
+                                                "query": query,
+                                                "fields": [field_name],
+                                                "type": "phrase_prefix",
+                                                "operator": "or"
+                                            }
+                                        }
+                                    ],
+                                    "minimum_should_match": "1"
                                 }
                             }
                         }
+                    }
+                ]
+            }
+        }
+
+        # For Parish Maps, apply a fixed collection filter.
+        if search_type == "parish":
+            main_query["bool"]["filter"] = [{
+                "terms": {
+                    "collectionId": [
+                        51, 66, 36, 41, 38, 40, 39, 11, 12, 14, 3, 15, 16, 6, 9, 10,
+                        4, 13, 5, 7, 8, 28, 23, 26, 29, 24, 27, 25, 18, 21, 32, 19, 33, 20
                     ]
                 }
-            },
-            "size": 20
+            }]
+        # For non-Parish searches, if the user provided collection IDs, apply those.
+        elif collection_ids:
+            try:
+                collections = [int(x.strip()) for x in collection_ids.split(",") if x.strip()]
+                main_query["bool"]["filter"] = [{"terms": {"collectionId": collections}}]
+            except Exception as e:
+                flash("Invalid collection IDs. Please use comma-separated numeric values.", "danger")
+                return redirect(url_for("search"))
+
+        query_payload = {
+            "query": main_query,
+            "size": query_size
         }
-        # Create the NDJSON payload (two JSON objects separated by newlines).
+
+        # Construct the NDJSON payload.
         payload = json.dumps(pref_payload) + "\n" + json.dumps(query_payload) + "\n"
-        
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0",
             "Accept": "application/json",
@@ -116,7 +143,7 @@ def search():
             if not documents:
                 flash("No documents found for the search query.", "warning")
                 return redirect(url_for("search"))
-            # Save the results in session for later use.
+            # Save results in session for later use.
             session["search_results_json"] = json.dumps(documents)
             return render_template("search_results.html", documents=documents)
         except requests.exceptions.HTTPError:

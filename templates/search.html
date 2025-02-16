@@ -23,13 +23,17 @@
         <select class="form-select" id="search_type" name="search_type">
           <option value="crown">Crown Plan</option>
           <option value="volfol">Vol Fol</option>
+          <option value="parish">Parish Maps</option>
         </select>
       </div>
       <div class="mb-3">
-        <label for="search_str" class="form-label">
-          Enter Search Term
-        </label>
-        <input type="text" class="form-control" id="search_str" name="search_str" placeholder="e.g., 1-369A for Crown Plan or 1-1 for Vol Fol" required>
+        <label for="search_str" class="form-label">Enter Search Term</label>
+        <input type="text" class="form-control" id="search_str" name="search_str" placeholder="For example, '1-369A' for Crown Plan, '1-1' for Vol Fol, or a parish name for Parish Maps" required>
+      </div>
+      <!-- This field will be used only for Crown Plan and Vol Fol searches -->
+      <div class="mb-3">
+        <label for="collection_ids" class="form-label">Collection IDs (optional, comma-separated)</label>
+        <input type="text" class="form-control" id="collection_ids" name="collection_ids" placeholder="e.g., 55,30">
       </div>
       <button type="submit" class="btn btn-primary">Search</button>
     </form>
