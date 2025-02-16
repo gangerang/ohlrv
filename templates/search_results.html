@@ -1,4 +1,4 @@
-\<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -22,20 +22,20 @@
         {% endfor %}
       {% endif %}
     {% endwith %}
-
-    <!-- Top Controls -->
+    
+    <!-- Display number of results at the top -->
     <div class="mb-3">
       <strong>{{ documents|length }} results returned.</strong>
     </div>
-    <div class="mb-3">
-      <form method="post" action="{{ url_for('download_selected') }}">
-        <button type="submit" class="btn btn-primary">Download Selected Documents</button>
-      </form>
-      <a href="{{ url_for('search') }}" class="btn btn-link">Back to Search</a>
-    </div>
-
-    <!-- Wrap table in one form -->
+    
+    <!-- Wrap everything in one form -->
     <form method="post" action="{{ url_for('download_selected') }}">
+      <!-- Top Controls -->
+      <div class="mb-3">
+        <button type="submit" class="btn btn-primary">Download Selected Documents</button>
+        <a href="{{ url_for('search') }}" class="btn btn-link">Back to Search</a>
+      </div>
+      
       <table class="table table-bordered mt-3 sortable" id="resultsTable">
         <thead>
           {% if search_type == "parish" %}
@@ -50,17 +50,7 @@
               <th>Collection</th>
               <th>Preview</th>
             </tr>
-          {% elif search_type == "crown" %}
-            <tr>
-              <th class="sorttable_nosort"><input type="checkbox" id="select_all"></th>
-              <th>Plan Number</th>
-              <th>County</th>
-              <th>Parish</th>
-              <th>Date Created</th>
-              <th>Preview</th>
-            </tr>
           {% else %}
-            {# For "volfol" and others #}
             <tr>
               <th class="sorttable_nosort"><input type="checkbox" id="select_all"></th>
               <th>Image Name</th>
@@ -77,21 +67,10 @@
             {% set source = doc._source %}
             <tr>
               <td><input type="checkbox" name="selected" value="{{ doc._id }}" class="doc_checkbox"></td>
-              {% if search_type == "crown" %}
-                <td>{{ source.crownPlanNumber if source.crownPlanNumber is defined else "" }}</td>
-                <td>{{ source.countyName }}</td>
-                <td>{{ source.parishName }}</td>
-                <td>
-                  {% if source.dateCreated %}
-                    {{ source.dateCreated.split(" ")[0] }}
-                  {% elif source.scanTimestamp %}
-                    {{ source.scanTimestamp.split(" ")[0] }}
-                  {% endif %}
-                </td>
-              {% elif search_type == "parish" %}
-                <td>{{ source.imageName }}</td>
-                <td>{{ source.countyName }}</td>
-                <td>{{ source.parishName }}</td>
+              <td>{{ source.imageName }}</td>
+              <td>{{ source.countyName }}</td>
+              <td>{{ source.parishName }}</td>
+              {% if search_type == "parish" %}
                 <td>{{ source.editionYear if source.editionYear is defined else "" }}</td>
                 <td>{{ source.editionNumber if source.editionNumber is defined else "" }}</td>
                 <td>
@@ -105,9 +84,6 @@
                   {% endif %}
                 </td>
               {% else %}
-                <td>{{ source.imageName }}</td>
-                <td>{{ source.countyName }}</td>
-                <td>{{ source.parishName }}</td>
                 <td>{{ source.location }}</td>
                 <td>
                   {% if source.dateCreated %}
