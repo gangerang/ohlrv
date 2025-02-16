@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Select Documents to Download</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+</head>
+<body>
+  <div class="container">
+    <h1 class="mt-5">Search Results</h1>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{ 'danger' if category=='danger' else 'info' }} mt-3">
+            <pre style="white-space: pre-wrap;">{{ message|safe }}</pre>
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+    <form method="post" action="{{ url_for('download_selected') }}">
+      <table class="table table-bordered mt-3">
+        <thead>
+          <tr>
+            <th>Select</th>
+            <th>Document ID</th>
+            <th>County</th>
+            <th>Parish</th>
+            <th>Location</th>
+            <th>Date Created</th>
+            <th>Preview</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for doc in documents %}
+            {% set source = doc._source %}
+            <tr>
+              <td>
+                <input type="checkbox" name="selected" value="{{ doc._id }}">
+              </td>
+              <td>{{ doc._id }}</td>
+              <td>{{ source.countyName }}</td>
+              <td>{{ source.parishName }}</td>
+              <td>{{ source.location }}</td>
+              <td>{{ source.dateCreated }}</td>
+              <td>
+                {% if source.images and source.images|length > 0 %}
+                  {% set first_image = source.images[0] %}
+                  {% set path = first_image.location ~ '/' ~ first_image.fileName %}
+                  {% set encoded_path = path | urlencode %}
+                  <a target="_blank" href="https://api.lrsnative.com.au/hlrv/iiif/2/{{ encoded_path }}/full/1024,/0/default.jpg">
+                    Preview
+                  </a>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <button type="submit" class="btn btn-primary">Download Selected Documents</button>
+    </form>
+    <a href="{{ url_for('search') }}" class="btn btn-link mt-3">Back to Search</a>
+  </div>
+</body>
+</html>
