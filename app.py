@@ -145,7 +145,8 @@ def search():
                 return redirect(url_for("search"))
             # Save results in session for later use.
             session["search_results_json"] = json.dumps(documents)
-            return render_template("search_results.html", documents=documents)
+            session["search_type"] = search_type
+            return render_template("search_results.html", documents=documents, search_type=search_type)
         except requests.exceptions.HTTPError:
             logging.error(f"HTTP error {api_response.status_code}: {api_response.text}")
             flash(f"HTTP error {api_response.status_code}: {api_response.text}", "danger")

@@ -20,15 +20,28 @@
     <form method="post" action="{{ url_for('download_selected') }}">
       <table class="table table-bordered mt-3">
         <thead>
-          <tr>
-            <th>Select</th>
-            <th>Image Name</th>
-            <th>County</th>
-            <th>Parish</th>
-            <th>Location</th>
-            <th>Date Created</th>
-            <th>Preview</th>
-          </tr>
+          {% if search_type == "parish" %}
+            <tr>
+              <th>Select</th>
+              <th>Image Name</th>
+              <th>County</th>
+              <th>Parish</th>
+              <th>Year</th>
+              <th>Edition</th>
+              <th>Type</th>
+              <th>Preview</th>
+            </tr>
+          {% else %}
+            <tr>
+              <th>Select</th>
+              <th>Image Name</th>
+              <th>County</th>
+              <th>Parish</th>
+              <th>Location</th>
+              <th>Date Created</th>
+              <th>Preview</th>
+            </tr>
+          {% endif %}
         </thead>
         <tbody>
           {% for doc in documents %}
@@ -40,14 +53,20 @@
               <td>{{ source.imageName }}</td>
               <td>{{ source.countyName }}</td>
               <td>{{ source.parishName }}</td>
-              <td>{{ source.location }}</td>
-              <td>
-                {% if source.dateCreated %}
-                  {{ source.dateCreated.split(" ")[0] }}
-                {% elif source.scanTimestamp %}
-                  {{ source.scanTimestamp.split(" ")[0] }}
-                {% endif %}
-              </td>
+              {% if search_type == "parish" %}
+                <td>{{ source.editionYear if source.editionYear is defined else "" }}</td>
+                <td>{{ source.editionNumber if source.editionNumber is defined else "" }}</td>
+                <td>{{ source.collectionName if source.collectionName is defined else "" }}</td>
+              {% else %}
+                <td>{{ source.location }}</td>
+                <td>
+                  {% if source.dateCreated %}
+                    {{ source.dateCreated.split(" ")[0] }}
+                  {% elif source.scanTimestamp %}
+                    {{ source.scanTimestamp.split(" ")[0] }}
+                  {% endif %}
+                </td>
+              {% endif %}
               <td>
                 {% if source.images and source.images|length > 0 %}
                   {% for image in source.images %}
