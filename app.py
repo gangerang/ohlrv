@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from flask import Flask, render_template, request, redirect, url_for, flash, send_file, session
-import requests, json, subprocess, logging, os, zipfile
+import requests, json, subprocess, logging, os, zipfile, uuid
 from urllib.parse import quote
 
 app = Flask(__name__)
@@ -12,6 +12,7 @@ logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(levelname)s] %(m
 @app.before_request
 def log_request_info():
     logging.info(f"Incoming request: {request.method} {request.url}")
+    # Uncomment the next line if you need full header details:
     # logging.debug(f"Headers: {dict(request.headers)}")
     if request.method == "POST":
         logging.debug(f"Form Data: {request.form}")
@@ -31,6 +32,9 @@ if os.path.exists(mapping_file):
         COLLECTION_MAPPING = {int(k): v for k, v in raw_mapping.items()}
 else:
     logging.warning("Mapping file collection_type_name.json not found.")
+
+# Global cache for search results to avoid oversized session cookies.
+SEARCH_RESULTS_CACHE = {}
 
 # ---------------------------
 # General Search Route
@@ -111,7 +115,10 @@ def search():
                 flash("No documents found for the search query.", "warning")
                 return redirect(url_for("search"))
             logging.debug(f"search_results_json: {json.dumps(documents)}")
-            session["search_results_json"] = json.dumps(documents)
+            # Generate a unique key and cache the documents
+            result_key = str(uuid.uuid4())
+            SEARCH_RESULTS_CACHE[result_key] = documents
+            session["search_results_key"] = result_key
             session["search_type"] = search_type
             if search_type == "parish":
                 return render_template("search_results.html", documents=documents, search_type=search_type, collection_mapping=COLLECTION_MAPPING)
@@ -123,7 +130,6 @@ def search():
             return redirect(url_for("search"))
     return render_template("search.html")
 
-
 # ---------------------------
 # New "Search within Parish" Route
 # ---------------------------
@@ -131,7 +137,7 @@ def search():
 def search_within_parish():
     county = request.form.get("county", "").strip()
     parish = request.form.get("parish", "").strip()
-    # Expected values: "crown" or "parish"
+    # Expected values: "crown" or "parish" (from the button pressed)
     collection_group = request.form.get("collection_group", "").strip()
 
     if not parish:
@@ -141,16 +147,12 @@ def search_within_parish():
     if collection_group == "crown":
         allowed_ids = [55, 31]
         new_search_type = "crown"
-        # For crown plans, do NOT prepend "CROWN PLAN" – simply search the parish field.
-        query = parish  
-        field_name = "parishName.lowercase"
     else:
         allowed_ids = [41,38,40,39,11,12,14,3,15,16,6,9,10,4,13,5,7,8,28,23,26,29,24,27,25,18,21,32,19,33,20]
         new_search_type = "parish"
-        query = parish
-        field_name = "parishName.lowercase"
 
     pref_payload = {"preference": "attributeSearch"}
+    # Always search by parish name on the parishName.lowercase field.
     main_query = {
         "bool": {
             "must": [
@@ -159,8 +161,8 @@ def search_within_parish():
                         "must": {
                             "bool": {
                                 "should": [
-                                    {"multi_match": {"query": query, "fields": [field_name], "type": "best_fields", "operator": "or", "fuzziness": 0}},
-                                    {"multi_match": {"query": query, "fields": [field_name], "type": "phrase_prefix", "operator": "or"}}
+                                    {"multi_match": {"query": parish, "fields": ["parishName.lowercase"], "type": "best_fields", "operator": "or", "fuzziness": 0}},
+                                    {"multi_match": {"query": parish, "fields": ["parishName.lowercase"], "type": "phrase_prefix", "operator": "or"}}
                                 ],
                                 "minimum_should_match": 1
                             }
@@ -191,7 +193,10 @@ def search_within_parish():
         if not documents:
             flash("No documents found for the selected parish.", "warning")
             return redirect(url_for("search"))
-        session["search_results_json"] = json.dumps(documents)
+        # Cache the results and store the key in session.
+        result_key = str(uuid.uuid4())
+        SEARCH_RESULTS_CACHE[result_key] = documents
+        session["search_results_key"] = result_key
         session["search_type"] = new_search_type
         if new_search_type == "parish":
             return render_template("search_results.html", documents=documents, search_type="parish", collection_mapping=COLLECTION_MAPPING)
@@ -202,9 +207,9 @@ def search_within_parish():
         flash(f"Error during search: {e}", "danger")
         return redirect(url_for("search"))
 
-###############################################################################
-# Download Selected Documents Route (unchanged)
-###############################################################################
+# ---------------------------
+# Download Selected Documents Route
+# ---------------------------
 @app.route("/download_selected", methods=["POST"])
 def download_selected():
     selected_ids = request.form.getlist("selected")
@@ -212,12 +217,13 @@ def download_selected():
     if not selected_ids:
         flash("No documents selected for download.", "warning")
         return redirect(url_for("search"))
-    documents_json = session.get("search_results_json")
-    logging.debug(f"documents_json: {documents_json}")
-    if not documents_json:
+    result_key = session.get("search_results_key")
+    logging.debug(f"session search_results_key: {result_key}")
+    if not result_key or result_key not in SEARCH_RESULTS_CACHE:
         flash("Session expired. Please search again.", "danger")
         return redirect(url_for("search"))
-    documents = json.loads(documents_json)
+    documents = SEARCH_RESULTS_CACHE[result_key]
+    logging.debug(f"documents from cache: {json.dumps(documents)}")
     selected_documents = [doc for doc in documents if doc.get("_id") in selected_ids]
     logging.debug(f"selected documents: {selected_documents}")
     if not selected_documents:
@@ -236,7 +242,6 @@ def download_selected():
             try:
                 location = image.get("location")  # e.g., "eirCP/BS/1-100/15"
                 fileName = image.get("fileName")   # e.g., "BS_650_1538J1.jp2"
-                # Build the full path (must include "eirCP/").
                 path = f"{location}/{fileName}"
                 encoded = quote(path, safe='')
                 info_url = f"https://api.lrsnative.com.au/hlrv/iiif/2/{encoded}/info.json"
@@ -253,8 +258,7 @@ def download_selected():
                 temp_manifest = f"/tmp/manifest_{doc_id}_{fileName}.json"
                 with open(temp_manifest, "w") as f:
                     f.write(manifest_modified)
-                # Save the file using only the image file name.
-                output_filename = fileName.replace('.jp2','.jpg')
+                output_filename = fileName.replace('.jp2', '.jpg')
                 if not os.path.exists(output_filename):
                     result = subprocess.run([PATH_DEZOOMIFY, '-l', temp_manifest, output_filename, '--logging', 'debug'], capture_output=True)
                     if result.returncode != 0:
@@ -291,9 +295,9 @@ def download_selected():
         response.call_on_close(cleanup)
         return response
 
-###############################################################################
-# Legacy Version Route (accessible at "/old")
-###############################################################################
+# ---------------------------
+# Legacy Version Route
+# ---------------------------
 @app.route("/old", methods=["GET", "POST"])
 def index():
     return render_template("index.html")
