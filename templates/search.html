@@ -19,10 +19,17 @@
     {% endwith %}
     <form method="post" class="mt-3">
       <div class="mb-3">
+        <label for="search_type" class="form-label">Search Type</label>
+        <select class="form-select" id="search_type" name="search_type">
+          <option value="crown">Crown Plan</option>
+          <option value="volfol">Vol Fol</option>
+        </select>
+      </div>
+      <div class="mb-3">
         <label for="search_str" class="form-label">
-          Enter Crown Plan Number (without "CROWN PLAN" prefix)
+          Enter Search Term
         </label>
-        <input type="text" class="form-control" id="search_str" name="search_str" placeholder="e.g., 1213-3080" required>
+        <input type="text" class="form-control" id="search_str" name="search_str" placeholder="e.g., 1-369A for Crown Plan or 1-1 for Vol Fol" required>
       </div>
       <button type="submit" class="btn btn-primary">Search</button>
     </form>

@@ -41,7 +41,13 @@
               <td>{{ source.countyName }}</td>
               <td>{{ source.parishName }}</td>
               <td>{{ source.location }}</td>
-              <td>{{ source.dateCreated.split(" ")[0] }}</td>
+              <td>
+                {% if source.dateCreated %}
+                  {{ source.dateCreated.split(" ")[0] }}
+                {% elif source.scanTimestamp %}
+                  {{ source.scanTimestamp.split(" ")[0] }}
+                {% endif %}
+              </td>
               <td>
                 {% if source.images and source.images|length > 0 %}
                   {% for image in source.images %}

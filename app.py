@@ -6,7 +6,7 @@ from urllib.parse import quote
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "default_secret_for_dev")
 
-# Configure logging to output timestamp, log level, and message.
+# Configure logging: timestamp, log level, and message.
 logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s [%(levelname)s] %(message)s"
@@ -20,25 +20,36 @@ def log_request_info():
     if request.method == "POST":
         logging.debug(f"Form Data: {request.form}")
 
-# Register a custom Jinja filter that fully URL-encodes a string (including '/')
+# Register a custom Jinja filter to URL‑encode strings (including '/')
 app.jinja_env.filters['custom_quote'] = lambda s: quote(s, safe='')
 
 # Path to the dezoomify executable.
 PATH_DEZOOMIFY = '/usr/local/bin/dezoomify-rs'
 
-# --- Updated / route (using NDJSON payload built from dictionaries) ---
+###############################################################################
+# Default search page ("/") supporting multiple search types.
+###############################################################################
 @app.route("/", methods=["GET", "POST"])
 def search():
     if request.method == "POST":
         search_str = request.form.get("search_str")
+        search_type = request.form.get("search_type", "crown")  # "crown" or "volfol"
         if not search_str:
-            flash("Please provide a search string.", "danger")
+            flash("Please provide a search term.", "danger")
             return redirect(url_for("search"))
         
-        # Build the full query string.
-        query = f"CROWN PLAN {search_str}"
+        # For Vol Fol search, we use the provided search string directly
+        # and search the "volFol.lowercase" field.
+        if search_type == "volfol":
+            query = search_str
+            field_name = "volFol.lowercase"
+        else:
+            # For Crown Plan search, we prepend "CROWN PLAN " to the search term
+            # and search the "imageName.lowercase" field.
+            query = f"CROWN PLAN {search_str}"
+            field_name = "imageName.lowercase"
         
-        # Build NDJSON payload using dictionaries.
+        # Build the NDJSON payload using dictionaries.
         pref_payload = {"preference": "attributeSearch"}
         query_payload = {
             "query": {
@@ -52,7 +63,7 @@ def search():
                                             {
                                                 "multi_match": {
                                                     "query": query,
-                                                    "fields": ["imageName.lowercase"],
+                                                    "fields": [field_name],
                                                     "type": "best_fields",
                                                     "operator": "or",
                                                     "fuzziness": 0
@@ -61,7 +72,7 @@ def search():
                                             {
                                                 "multi_match": {
                                                     "query": query,
-                                                    "fields": ["imageName.lowercase"],
+                                                    "fields": [field_name],
                                                     "type": "phrase_prefix",
                                                     "operator": "or"
                                                 }
@@ -77,8 +88,7 @@ def search():
             },
             "size": 20
         }
-        
-        # Construct the NDJSON payload.
+        # Create the NDJSON payload (two JSON objects separated by newlines).
         payload = json.dumps(pref_payload) + "\n" + json.dumps(query_payload) + "\n"
         
         headers = {
@@ -97,16 +107,16 @@ def search():
         }
         url = "https://api.lrsnative.com.au/hlrv/documents/_msearch?"
         try:
-            logging.info(f"Searching for: {query}")
+            logging.info(f"Searching for: {query} (type: {search_type})")
             logging.debug(f"Sending POST to {url}\nHeaders: {headers}\nPayload: {payload}")
             api_response = requests.post(url, headers=headers, data=payload, timeout=10)
-            api_response.raise_for_status()  # Raises HTTPError for non-200 responses.
+            api_response.raise_for_status()
             results = api_response.json()
             documents = results.get("responses", [])[0].get("hits", {}).get("hits", [])
             if not documents:
                 flash("No documents found for the search query.", "warning")
                 return redirect(url_for("search"))
-            # Save results in session for later use.
+            # Save the results in session for later use.
             session["search_results_json"] = json.dumps(documents)
             return render_template("search_results.html", documents=documents)
         except requests.exceptions.HTTPError:
@@ -119,15 +129,11 @@ def search():
             return redirect(url_for("search"))
     return render_template("search.html")
 
-# --- Updated /download_selected route ---
+###############################################################################
+# Download Selected Documents Route (unchanged)
+###############################################################################
 @app.route("/download_selected", methods=["POST"])
 def download_selected():
-    """
-    Process the selection from the search results page.
-    For each selected document, download all image parts using dezoomify-rs.
-    If more than one image is downloaded, package them into a ZIP archive.
-    The saved file names no longer include the document id.
-    """
     selected_ids = request.form.getlist("selected")
     if not selected_ids:
         flash("No documents selected for download.", "warning")
@@ -146,15 +152,14 @@ def download_selected():
     for doc in selected_documents:
         source = doc.get("_source", {})
         doc_id = doc.get("_id")
-        logging.info(f"Downloading document {doc_id}: "
-                     f"{source.get('countyName')} - {source.get('parishName')}, "
+        logging.info(f"Downloading document {doc_id}: {source.get('countyName')} - {source.get('parishName')}, "
                      f"Location: {source.get('location')}, Date: {source.get('dateCreated')}")
         images = source.get("images", [])
         for image in images:
             try:
                 location = image.get("location")  # e.g., "eirCP/BS/1-100/15"
                 fileName = image.get("fileName")   # e.g., "BS_650_1538J1.jp2"
-                # Build the full path (which must include "eirCP/").
+                # Build the full path (must include "eirCP/").
                 path = f"{location}/{fileName}"
                 encoded = quote(path, safe='')
                 info_url = f"https://api.lrsnative.com.au/hlrv/iiif/2/{encoded}/info.json"
@@ -171,7 +176,7 @@ def download_selected():
                 temp_manifest = f"/tmp/manifest_{doc_id}_{fileName}.json"
                 with open(temp_manifest, "w") as f:
                     f.write(manifest_modified)
-                # Save file without the document id prefix.
+                # Save the file using only the image file name.
                 output_filename = fileName.replace('.jp2','.jpg')
                 if not os.path.exists(output_filename):
                     result = subprocess.run([PATH_DEZOOMIFY, '-l', temp_manifest, output_filename], capture_output=True)
@@ -209,8 +214,10 @@ def download_selected():
         response.call_on_close(cleanup)
         return response
 
-# --- Existing index route (if needed) ---
-@app.route("/manual", methods=["GET", "POST"])
+###############################################################################
+# Legacy Version Route (accessible at "/old")
+###############################################################################
+@app.route("/old", methods=["GET", "POST"])
 def index():
     return render_template("index.html")
 
