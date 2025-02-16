@@ -114,7 +114,7 @@ def search():
             if not documents:
                 flash("No documents found for the search query.", "warning")
                 return redirect(url_for("search"))
-            logging.debug(f"search_results_json: {json.dumps(documents)}")
+            # logging.debug(f"search_results_json: {json.dumps(documents)}")
             # Generate a unique key and cache the documents
             result_key = str(uuid.uuid4())
             SEARCH_RESULTS_CACHE[result_key] = documents
@@ -223,7 +223,7 @@ def download_selected():
         flash("Session expired. Please search again.", "danger")
         return redirect(url_for("search"))
     documents = SEARCH_RESULTS_CACHE[result_key]
-    logging.debug(f"documents from cache: {json.dumps(documents)}")
+    # logging.debug(f"documents from cache: {json.dumps(documents)}")
     selected_documents = [doc for doc in documents if doc.get("_id") in selected_ids]
     logging.debug(f"selected documents: {selected_documents}")
     if not selected_documents:

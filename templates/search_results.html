@@ -22,7 +22,20 @@
         {% endfor %}
       {% endif %}
     {% endwith %}
+    
+    <!-- Display number of results at the top -->
+    <div class="mb-3">
+      <strong>{{ documents|length }} results returned.</strong>
+    </div>
+    
+    <!-- Wrap everything in one form -->
     <form method="post" action="{{ url_for('download_selected') }}">
+      <!-- Top Controls -->
+      <div class="mb-3">
+        <button type="submit" class="btn btn-primary">Download Selected Documents</button>
+        <a href="{{ url_for('search') }}" class="btn btn-link">Back to Search</a>
+      </div>
+      
       <table class="table table-bordered mt-3 sortable" id="resultsTable">
         <thead>
           {% if search_type == "parish" %}
@@ -95,9 +108,13 @@
           {% endfor %}
         </tbody>
       </table>
-      <button type="submit" class="btn btn-primary">Download Selected Documents</button>
+      
+      <!-- Bottom Controls -->
+      <div class="mb-3">
+        <button type="submit" class="btn btn-primary">Download Selected Documents</button>
+        <a href="{{ url_for('search') }}" class="btn btn-link">Back to Search</a>
+      </div>
     </form>
-    <a href="{{ url_for('search') }}" class="btn btn-link mt-3">Back to Search</a>
   </div>
   
   <script>
