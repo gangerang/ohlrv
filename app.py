@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(levelname)s] %(m
 @app.before_request
 def log_request_info():
     logging.info(f"Incoming request: {request.method} {request.url}")
-    logging.debug(f"Headers: {dict(request.headers)}")
+    # logging.debug(f"Headers: {dict(request.headers)}")
     if request.method == "POST":
         logging.debug(f"Form Data: {request.form}")
 
@@ -110,6 +110,7 @@ def search():
             if not documents:
                 flash("No documents found for the search query.", "warning")
                 return redirect(url_for("search"))
+            logging.debug(f"search_results_json: {json.dumps(documents)}")
             session["search_results_json"] = json.dumps(documents)
             session["search_type"] = search_type
             if search_type == "parish":
@@ -122,28 +123,32 @@ def search():
             return redirect(url_for("search"))
     return render_template("search.html")
 
+
 # ---------------------------
 # New "Search within Parish" Route
 # ---------------------------
 @app.route("/search_within_parish", methods=["POST"])
 def search_within_parish():
-    # County is optional; parish is required.
     county = request.form.get("county", "").strip()
     parish = request.form.get("parish", "").strip()
-    # The collection_group is now submitted via one of the three buttons.
-    collection_group = request.form.get("collection_group", "").strip()  # Expected: "parish", "crown", "torrens"
+    # Expected values: "crown" or "parish"
+    collection_group = request.form.get("collection_group", "").strip()
 
     if not parish:
         flash("Please enter a parish.", "danger")
         return redirect(url_for("search"))
 
-    # Determine allowed collection IDs based on the selected button.
     if collection_group == "crown":
         allowed_ids = [55, 31]
-    elif collection_group == "torrens":
-        allowed_ids = [30]
-    else:  # "parish" group
+        new_search_type = "crown"
+        # For crown plans, do NOT prepend "CROWN PLAN" – simply search the parish field.
+        query = parish  
+        field_name = "parishName.lowercase"
+    else:
         allowed_ids = [41,38,40,39,11,12,14,3,15,16,6,9,10,4,13,5,7,8,28,23,26,29,24,27,25,18,21,32,19,33,20]
+        new_search_type = "parish"
+        query = parish
+        field_name = "parishName.lowercase"
 
     pref_payload = {"preference": "attributeSearch"}
     main_query = {
@@ -154,8 +159,8 @@ def search_within_parish():
                         "must": {
                             "bool": {
                                 "should": [
-                                    {"multi_match": {"query": parish, "fields": ["parishName.lowercase"], "type": "best_fields", "operator": "or", "fuzziness": 0}},
-                                    {"multi_match": {"query": parish, "fields": ["parishName.lowercase"], "type": "phrase_prefix", "operator": "or"}}
+                                    {"multi_match": {"query": query, "fields": [field_name], "type": "best_fields", "operator": "or", "fuzziness": 0}},
+                                    {"multi_match": {"query": query, "fields": [field_name], "type": "phrase_prefix", "operator": "or"}}
                                 ],
                                 "minimum_should_match": 1
                             }
@@ -168,7 +173,6 @@ def search_within_parish():
             ]
         }
     }
-    # Return up to 10,000 results.
     query_payload = {"query": main_query, "size": 10000}
     payload = json.dumps(pref_payload) + "\n" + json.dumps(query_payload) + "\n"
     headers = {
@@ -188,8 +192,11 @@ def search_within_parish():
             flash("No documents found for the selected parish.", "warning")
             return redirect(url_for("search"))
         session["search_results_json"] = json.dumps(documents)
-        session["search_type"] = "parish"
-        return render_template("search_results.html", documents=documents, search_type="parish", collection_mapping=COLLECTION_MAPPING)
+        session["search_type"] = new_search_type
+        if new_search_type == "parish":
+            return render_template("search_results.html", documents=documents, search_type="parish", collection_mapping=COLLECTION_MAPPING)
+        else:
+            return render_template("search_results.html", documents=documents, search_type=new_search_type)
     except Exception as e:
         logging.error(f"Error in search_within_parish: {e}")
         flash(f"Error during search: {e}", "danger")
@@ -201,16 +208,20 @@ def search_within_parish():
 @app.route("/download_selected", methods=["POST"])
 def download_selected():
     selected_ids = request.form.getlist("selected")
+    logging.debug(f"selected ids: {selected_ids}")
     if not selected_ids:
         flash("No documents selected for download.", "warning")
         return redirect(url_for("search"))
     documents_json = session.get("search_results_json")
+    logging.debug(f"documents_json: {documents_json}")
     if not documents_json:
         flash("Session expired. Please search again.", "danger")
         return redirect(url_for("search"))
     documents = json.loads(documents_json)
     selected_documents = [doc for doc in documents if doc.get("_id") in selected_ids]
+    logging.debug(f"selected documents: {selected_documents}")
     if not selected_documents:
+        logging.debug("No documents found")
         flash("No matching documents found.", "danger")
         return redirect(url_for("search"))
     
@@ -245,7 +256,7 @@ def download_selected():
                 # Save the file using only the image file name.
                 output_filename = fileName.replace('.jp2','.jpg')
                 if not os.path.exists(output_filename):
-                    result = subprocess.run([PATH_DEZOOMIFY, '-l', temp_manifest, output_filename], capture_output=True)
+                    result = subprocess.run([PATH_DEZOOMIFY, '-l', temp_manifest, output_filename, '--logging', 'debug'], capture_output=True)
                     if result.returncode != 0:
                         error_message = result.stderr.decode()
                         logging.error(f"dezoomify error for {output_filename}: {error_message}")
