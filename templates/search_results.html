@@ -22,7 +22,7 @@
         <thead>
           <tr>
             <th>Select</th>
-            <th>Document ID</th>
+            <th>Image Name</th>
             <th>County</th>
             <th>Parish</th>
             <th>Location</th>
@@ -35,21 +35,26 @@
             {% set source = doc._source %}
             <tr>
               <td>
-                <input type="checkbox" name="selected" value="{{ doc._id }}">
+                <!-- All checkboxes are pre-selected -->
+                <input type="checkbox" name="selected" value="{{ doc._id }}" checked>
               </td>
-              <td>{{ doc._id }}</td>
+              <td>{{ source.imageName }}</td>
               <td>{{ source.countyName }}</td>
               <td>{{ source.parishName }}</td>
               <td>{{ source.location }}</td>
-              <td>{{ source.dateCreated }}</td>
+              <td>
+                {# Split off any time component (assumes a space separates date and time) #}
+                {{ source.dateCreated.split(" ")[0] }}
+              </td>
               <td>
                 {% if source.images and source.images|length > 0 %}
-                  {% set first_image = source.images[0] %}
-                  {% set path = first_image.location ~ '/' ~ first_image.fileName %}
-                  {% set encoded_path = path | urlencode %}
-                  <a target="_blank" href="https://api.lrsnative.com.au/hlrv/iiif/2/{{ encoded_path }}/full/1024,/0/default.jpg">
-                    Preview
-                  </a>
+                  {% for image in source.images %}
+                    {% set full_path = image.location ~ '/' ~ image.fileName %}
+                    {% set encoded_path = full_path | custom_quote %}
+                    <a target="_blank" href="https://api.lrsnative.com.au/hlrv/iiif/2/{{ encoded_path }}/full/1024,/0/default.jpg">
+                      {{ image.fileName }}
+                    </a>{% if not loop.last %}, {% endif %}
+                  {% endfor %}
                 {% endif %}
               </td>
             </tr>

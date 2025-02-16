@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 from flask import Flask, render_template, request, redirect, url_for, flash, send_file, session
-import requests, json, subprocess, logging, os
+import requests, json, subprocess, logging, os, zipfile
 from urllib.parse import quote
-import zipfile
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "default_secret_for_dev")
@@ -21,19 +20,13 @@ def log_request_info():
     if request.method == "POST":
         logging.debug(f"Form Data: {request.form}")
 
+# Register a custom Jinja filter that fully URL-encodes a string (including '/')
+app.jinja_env.filters['custom_quote'] = lambda s: quote(s, safe='')
+
 # Path to the dezoomify executable.
 PATH_DEZOOMIFY = '/usr/local/bin/dezoomify-rs'
 
-# --------------
-# EXISTING CODE
-# --------------
-# (your current routes and functions remain available if needed)
-# … (existing index route and search_and_download functions) …
-
-# --------------
-# NEW SEARCH FUNCTIONALITY
-# --------------
-
+# --- Updated /search route (using NDJSON payload built from dictionaries) ---
 @app.route("/search", methods=["GET", "POST"])
 def search():
     if request.method == "POST":
@@ -42,10 +35,10 @@ def search():
             flash("Please provide a search string.", "danger")
             return redirect(url_for("search"))
         
-        # Build the full query string
+        # Build the full query string.
         query = f"CROWN PLAN {search_str}"
         
-        # Create the NDJSON payload using dictionaries to avoid formatting errors.
+        # Build NDJSON payload using dictionaries.
         pref_payload = {"preference": "attributeSearch"}
         query_payload = {
             "query": {
@@ -85,7 +78,7 @@ def search():
             "size": 20
         }
         
-        # Build the NDJSON payload by concatenating two JSON strings separated by newlines.
+        # Construct the NDJSON payload.
         payload = json.dumps(pref_payload) + "\n" + json.dumps(query_payload) + "\n"
         
         headers = {
@@ -113,7 +106,7 @@ def search():
             if not documents:
                 flash("No documents found for the search query.", "warning")
                 return redirect(url_for("search"))
-            # Save the results in session for later use.
+            # Save results in session for later use.
             session["search_results_json"] = json.dumps(documents)
             return render_template("search_results.html", documents=documents)
         except requests.exceptions.HTTPError:
@@ -126,15 +119,14 @@ def search():
             return redirect(url_for("search"))
     return render_template("search.html")
 
-
-
+# --- Updated /download_selected route ---
 @app.route("/download_selected", methods=["POST"])
 def download_selected():
     """
-    Process the selection from the search results page. For each document selected,
-    iterate over its image parts, fetch the IIIF manifest, modify it to force jpg output,
-    and then call dezoomify-rs to download the image. If more than one file is downloaded,
-    create a zip archive.
+    Process the selection from the search results page.
+    For each selected document, download all image parts using dezoomify-rs.
+    If more than one image is downloaded, package them into a ZIP archive.
+    The saved file names no longer include the document id.
     """
     selected_ids = request.form.getlist("selected")
     if not selected_ids:
@@ -145,7 +137,6 @@ def download_selected():
         flash("Session expired. Please search again.", "danger")
         return redirect(url_for("search"))
     documents = json.loads(documents_json)
-    # Filter the documents using the _id field (all are strings in the JSON response)
     selected_documents = [doc for doc in documents if doc.get("_id") in selected_ids]
     if not selected_documents:
         flash("No matching documents found.", "danger")
@@ -155,16 +146,15 @@ def download_selected():
     for doc in selected_documents:
         source = doc.get("_source", {})
         doc_id = doc.get("_id")
-        # Log document info (countyName, parishName, location, dateCreated)
         logging.info(f"Downloading document {doc_id}: "
                      f"{source.get('countyName')} - {source.get('parishName')}, "
                      f"Location: {source.get('location')}, Date: {source.get('dateCreated')}")
         images = source.get("images", [])
         for image in images:
             try:
-                location = image.get("location")  # e.g., "eirCP/SR/1-100/1"
-                fileName = image.get("fileName")   # e.g., "SR_1_369AJ1.jp2"
-                # Build the full path. (Note: the API response already includes "eirCP/" in location.)
+                location = image.get("location")  # e.g., "eirCP/BS/1-100/15"
+                fileName = image.get("fileName")   # e.g., "BS_650_1538J1.jp2"
+                # Build the full path (which must include "eirCP/").
                 path = f"{location}/{fileName}"
                 encoded = quote(path, safe='')
                 info_url = f"https://api.lrsnative.com.au/hlrv/iiif/2/{encoded}/info.json"
@@ -172,19 +162,17 @@ def download_selected():
                 manifest_response = requests.get(info_url, timeout=10)
                 manifest_response.raise_for_status()
                 manifest = manifest_response.text
-                # Modify the manifest so that the image is output as jpg (similar to your original code)
                 image_json = json.loads(manifest)
                 if "profile" in image_json and isinstance(image_json["profile"], list) and len(image_json["profile"]) >= 2:
                     image_json["profile"][0] = "http://iiif.io/api/image/2/level1.json"
                     if isinstance(image_json["profile"][1], dict) and "formats" in image_json["profile"][1]:
                         image_json["profile"][1]["formats"] = ["jpg"]
                 manifest_modified = json.dumps(image_json)
-                # Write manifest to a temporary file.
                 temp_manifest = f"/tmp/manifest_{doc_id}_{fileName}.json"
                 with open(temp_manifest, "w") as f:
                     f.write(manifest_modified)
-                # Create a unique output filename (replace .jp2 with .jpg)
-                output_filename = f"{doc_id}_{fileName.replace('.jp2','.jpg')}"
+                # Save file without the document id prefix.
+                output_filename = fileName.replace('.jp2','.jpg')
                 if not os.path.exists(output_filename):
                     result = subprocess.run([PATH_DEZOOMIFY, '-l', temp_manifest, output_filename], capture_output=True)
                     if result.returncode != 0:
@@ -203,7 +191,6 @@ def download_selected():
     if not downloaded_files:
         flash("No images were successfully downloaded.", "danger")
         return redirect(url_for("search"))
-    # If only one file downloaded, send that file; if multiple, create a zip.
     if len(downloaded_files) == 1:
         file_to_send = downloaded_files[0]
         response = send_file(file_to_send, as_attachment=True)
@@ -222,14 +209,9 @@ def download_selected():
         response.call_on_close(cleanup)
         return response
 
-# --------------
-# EXISTING INDEX ROUTE (optional)
-# --------------
-
+# --- Existing index route (if needed) ---
 @app.route("/", methods=["GET", "POST"])
 def index():
-    # You can keep your original form if desired.
-    # For example, a link to the new search functionality could be provided here.
     return render_template("index.html")
 
 if __name__ == "__main__":
