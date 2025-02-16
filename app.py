@@ -33,7 +33,7 @@ else:
     logging.warning("Mapping file collection_type_name.json not found.")
 
 # ---------------------------
-# General Search Route (unchanged)
+# General Search Route
 # ---------------------------
 @app.route("/", methods=["GET", "POST"])
 def search():
@@ -167,7 +167,8 @@ def search_within_parish():
             ]
         }
     }
-    query_payload = {"query": main_query, "size": 20}
+    # Change size from 20 to 10000
+    query_payload = {"query": main_query, "size": 10000}
     payload = json.dumps(pref_payload) + "\n" + json.dumps(query_payload) + "\n"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0",
