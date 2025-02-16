@@ -41,17 +41,53 @@ def search():
         if not search_str:
             flash("Please provide a search string.", "danger")
             return redirect(url_for("search"))
+        
+        # Build the full query string
         query = f"CROWN PLAN {search_str}"
-        # Build the NDJSON payload (ensure the format is exactly what the API expects)
-        payload = (
-            '{"preference":"attributeSearch"}\n'
-            '{"query":{"bool":{"must":[{"bool":{"must":{"bool":{"should":['
-            '{"multi_match":{"query":"' + query + '","fields":["imageName.lowercase"],'
-            '"type":"best_fields","operator":"or","fuzziness":0}},'
-            '{"multi_match":{"query":"' + query + '","fields":["imageName.lowercase"],'
-            '"type":"phrase_prefix","operator":"or"}}'
-            '],"minimum_should_match":"1"}}}}]},"size":20}\n'
-        )
+        
+        # Create the NDJSON payload using dictionaries to avoid formatting errors.
+        pref_payload = {"preference": "attributeSearch"}
+        query_payload = {
+            "query": {
+                "bool": {
+                    "must": [
+                        {
+                            "bool": {
+                                "must": {
+                                    "bool": {
+                                        "should": [
+                                            {
+                                                "multi_match": {
+                                                    "query": query,
+                                                    "fields": ["imageName.lowercase"],
+                                                    "type": "best_fields",
+                                                    "operator": "or",
+                                                    "fuzziness": 0
+                                                }
+                                            },
+                                            {
+                                                "multi_match": {
+                                                    "query": query,
+                                                    "fields": ["imageName.lowercase"],
+                                                    "type": "phrase_prefix",
+                                                    "operator": "or"
+                                                }
+                                            }
+                                        ],
+                                        "minimum_should_match": "1"
+                                    }
+                                }
+                            }
+                        }
+                    ]
+                }
+            },
+            "size": 20
+        }
+        
+        # Build the NDJSON payload by concatenating two JSON strings separated by newlines.
+        payload = json.dumps(pref_payload) + "\n" + json.dumps(query_payload) + "\n"
+        
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0",
             "Accept": "application/json",
@@ -71,16 +107,16 @@ def search():
             logging.info(f"Searching for: {query}")
             logging.debug(f"Sending POST to {url}\nHeaders: {headers}\nPayload: {payload}")
             api_response = requests.post(url, headers=headers, data=payload, timeout=10)
-            api_response.raise_for_status()  # will raise HTTPError for 400+
+            api_response.raise_for_status()  # Raises HTTPError for non-200 responses.
             results = api_response.json()
             documents = results.get("responses", [])[0].get("hits", {}).get("hits", [])
             if not documents:
                 flash("No documents found for the search query.", "warning")
                 return redirect(url_for("search"))
+            # Save the results in session for later use.
             session["search_results_json"] = json.dumps(documents)
             return render_template("search_results.html", documents=documents)
-        except requests.exceptions.HTTPError as e:
-            # Log additional details about the error
+        except requests.exceptions.HTTPError:
             logging.error(f"HTTP error {api_response.status_code}: {api_response.text}")
             flash(f"HTTP error {api_response.status_code}: {api_response.text}", "danger")
             return redirect(url_for("search"))
@@ -89,6 +125,7 @@ def search():
             flash(f"Error during search: {str(e)}", "danger")
             return redirect(url_for("search"))
     return render_template("search.html")
+
 
 
 @app.route("/download_selected", methods=["POST"])
