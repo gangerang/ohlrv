@@ -29,6 +29,7 @@
               <th>Year</th>
               <th>Edition</th>
               <th>Type</th>
+              <th>Collection</th>
               <th>Preview</th>
             </tr>
           {% else %}
@@ -56,7 +57,16 @@
               {% if search_type == "parish" %}
                 <td>{{ source.editionYear if source.editionYear is defined else "" }}</td>
                 <td>{{ source.editionNumber if source.editionNumber is defined else "" }}</td>
-                <td>{{ source.collectionName if source.collectionName is defined else "" }}</td>
+                <td>
+                  {% if source.collectionId and collection_mapping[source.collectionId] is defined %}
+                    {{ collection_mapping[source.collectionId][0] }}
+                  {% endif %}
+                </td>
+                <td>
+                  {% if source.collectionId and collection_mapping[source.collectionId] is defined %}
+                    {{ collection_mapping[source.collectionId][1] }}
+                  {% endif %}
+                </td>
               {% else %}
                 <td>{{ source.location }}</td>
                 <td>

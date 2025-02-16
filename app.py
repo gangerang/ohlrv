@@ -12,7 +12,6 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s"
 )
 
-# Log each incoming request.
 @app.before_request
 def log_request_info():
     logging.info(f"Incoming request: {request.method} {request.url}")
@@ -20,27 +19,38 @@ def log_request_info():
     if request.method == "POST":
         logging.debug(f"Form Data: {request.form}")
 
-# Register a custom Jinja filter to URL‑encode strings (including '/')
+# Register a custom Jinja filter that URL‑encodes strings (including '/')
 app.jinja_env.filters['custom_quote'] = lambda s: quote(s, safe='')
 
 # Path to the dezoomify executable.
 PATH_DEZOOMIFY = '/usr/local/bin/dezoomify-rs'
 
+# Load the collection mapping from a separate file (collection_type_name.json)
+COLLECTION_MAPPING = {}
+mapping_file = os.path.join(os.path.dirname(__file__), "collection_type_name.json")
+if os.path.exists(mapping_file):
+    with open(mapping_file, "r") as f:
+        raw_mapping = json.load(f)
+        # Convert keys to integers
+        COLLECTION_MAPPING = {int(k): v for k, v in raw_mapping.items()}
+else:
+    logging.warning("Mapping file collection_type_name.json not found.")
+
 ###############################################################################
-# Default search page ("/") supporting multiple search types.
+# Default Search Page Route ("/")
 ###############################################################################
 @app.route("/", methods=["GET", "POST"])
 def search():
     if request.method == "POST":
         search_str = request.form.get("search_str")
         search_type = request.form.get("search_type", "crown")  # "crown", "volfol", or "parish"
-        collection_ids = request.form.get("collection_ids", "").strip()  # Optional field
+        collection_ids = request.form.get("collection_ids", "").strip()  # Optional for crown & volfol
 
         if not search_str:
             flash("Please provide a search term.", "danger")
             return redirect(url_for("search"))
 
-        # Determine the query text, target field, and size based on search type.
+        # Determine query text, field, and result size.
         if search_type == "volfol":
             query = search_str
             field_name = "volFol.lowercase"
@@ -49,14 +59,12 @@ def search():
             query = search_str
             field_name = "parishName.lowercase"
             query_size = 10000
-        else:  # crown plan
+        else:  # crown
             query = f"CROWN PLAN {search_str}"
             field_name = "imageName.lowercase"
             query_size = 20
 
         pref_payload = {"preference": "attributeSearch"}
-
-        # Build the main query clause.
         main_query = {
             "bool": {
                 "must": [
@@ -83,7 +91,7 @@ def search():
                                             }
                                         }
                                     ],
-                                    "minimum_should_match": "1"
+                                    "minimum_should_match": 1
                                 }
                             }
                         }
@@ -92,17 +100,15 @@ def search():
             }
         }
 
-        # For Parish Maps, apply a fixed collection filter.
+        # Apply filters:
         if search_type == "parish":
+            # Fixed collection filter for parish maps.
             main_query["bool"]["filter"] = [{
                 "terms": {
-                    "collectionId": [
-                        51, 66, 36, 41, 38, 40, 39, 11, 12, 14, 3, 15, 16, 6, 9, 10,
-                        4, 13, 5, 7, 8, 28, 23, 26, 29, 24, 27, 25, 18, 21, 32, 19, 33, 20
-                    ]
+                    "collectionId": [51, 66, 36, 41, 38, 40, 39, 11, 12, 14, 3, 15, 16, 6, 9, 10,
+                                     4, 13, 5, 7, 8, 28, 23, 26, 29, 24, 27, 25, 18, 21, 32, 19, 33, 20]
                 }
             }]
-        # For non-Parish searches, if the user provided collection IDs, apply those.
         elif collection_ids:
             try:
                 collections = [int(x.strip()) for x in collection_ids.split(",") if x.strip()]
@@ -116,7 +122,6 @@ def search():
             "size": query_size
         }
 
-        # Construct the NDJSON payload.
         payload = json.dumps(pref_payload) + "\n" + json.dumps(query_payload) + "\n"
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0",
@@ -143,10 +148,14 @@ def search():
             if not documents:
                 flash("No documents found for the search query.", "warning")
                 return redirect(url_for("search"))
-            # Save results in session for later use.
+            # Save results and search type in session so we can use them in the template.
             session["search_results_json"] = json.dumps(documents)
             session["search_type"] = search_type
-            return render_template("search_results.html", documents=documents, search_type=search_type)
+            # For parish maps, also pass our collection mapping.
+            if search_type == "parish":
+                return render_template("search_results.html", documents=documents, search_type=search_type, collection_mapping=COLLECTION_MAPPING)
+            else:
+                return render_template("search_results.html", documents=documents, search_type=search_type)
         except requests.exceptions.HTTPError:
             logging.error(f"HTTP error {api_response.status_code}: {api_response.text}")
             flash(f"HTTP error {api_response.status_code}: {api_response.text}", "danger")
