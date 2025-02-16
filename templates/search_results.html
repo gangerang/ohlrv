@@ -53,7 +53,6 @@
           {% for doc in documents %}
             {% set source = doc._source %}
             <tr>
-              <!-- No "checked" attribute so each checkbox is unselected by default -->
               <td><input type="checkbox" name="selected" value="{{ doc._id }}" class="doc_checkbox"></td>
               <td>{{ source.imageName }}</td>
               <td>{{ source.countyName }}</td>

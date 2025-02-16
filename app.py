@@ -6,11 +6,8 @@ from urllib.parse import quote
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "default_secret_for_dev")
 
-# Configure logging: timestamp, log level, and message.
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s [%(levelname)s] %(message)s"
-)
+# Configure logging
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(levelname)s] %(message)s")
 
 @app.before_request
 def log_request_info():
@@ -19,38 +16,36 @@ def log_request_info():
     if request.method == "POST":
         logging.debug(f"Form Data: {request.form}")
 
-# Register a custom Jinja filter that URL‑encodes strings (including '/')
+# Register a custom filter to URL-encode strings.
 app.jinja_env.filters['custom_quote'] = lambda s: quote(s, safe='')
 
 # Path to the dezoomify executable.
 PATH_DEZOOMIFY = '/usr/local/bin/dezoomify-rs'
 
-# Load the collection mapping from a separate file (collection_type_name.json)
+# Load collection mapping from a JSON file.
 COLLECTION_MAPPING = {}
 mapping_file = os.path.join(os.path.dirname(__file__), "collection_type_name.json")
 if os.path.exists(mapping_file):
     with open(mapping_file, "r") as f:
         raw_mapping = json.load(f)
-        # Convert keys to integers
         COLLECTION_MAPPING = {int(k): v for k, v in raw_mapping.items()}
 else:
     logging.warning("Mapping file collection_type_name.json not found.")
 
-###############################################################################
-# Default Search Page Route ("/")
-###############################################################################
+# ---------------------------
+# General Search Route (unchanged)
+# ---------------------------
 @app.route("/", methods=["GET", "POST"])
 def search():
     if request.method == "POST":
         search_str = request.form.get("search_str")
         search_type = request.form.get("search_type", "crown")  # "crown", "volfol", or "parish"
-        collection_ids = request.form.get("collection_ids", "").strip()  # Optional for crown & volfol
+        collection_ids = request.form.get("collection_ids", "").strip()
 
         if not search_str:
             flash("Please provide a search term.", "danger")
             return redirect(url_for("search"))
 
-        # Determine query text, field, and result size.
         if search_type == "volfol":
             query = search_str
             field_name = "volFol.lowercase"
@@ -59,7 +54,7 @@ def search():
             query = search_str
             field_name = "parishName.lowercase"
             query_size = 10000
-        else:  # crown
+        else:
             query = f"CROWN PLAN {search_str}"
             field_name = "imageName.lowercase"
             query_size = 20
@@ -73,23 +68,8 @@ def search():
                             "must": {
                                 "bool": {
                                     "should": [
-                                        {
-                                            "multi_match": {
-                                                "query": query,
-                                                "fields": [field_name],
-                                                "type": "best_fields",
-                                                "operator": "or",
-                                                "fuzziness": 0
-                                            }
-                                        },
-                                        {
-                                            "multi_match": {
-                                                "query": query,
-                                                "fields": [field_name],
-                                                "type": "phrase_prefix",
-                                                "operator": "or"
-                                            }
-                                        }
+                                        {"multi_match": {"query": query, "fields": [field_name], "type": "best_fields", "operator": "or", "fuzziness": 0}},
+                                        {"multi_match": {"query": query, "fields": [field_name], "type": "phrase_prefix", "operator": "or"}}
                                     ],
                                     "minimum_should_match": 1
                                 }
@@ -100,14 +80,9 @@ def search():
             }
         }
 
-        # Apply filters:
         if search_type == "parish":
-            # Fixed collection filter for parish maps.
             main_query["bool"]["filter"] = [{
-                "terms": {
-                    "collectionId": [51, 66, 36, 41, 38, 40, 39, 11, 12, 14, 3, 15, 16, 6, 9, 10,
-                                     4, 13, 5, 7, 8, 28, 23, 26, 29, 24, 27, 25, 18, 21, 32, 19, 33, 20]
-                }
+                "terms": {"collectionId": [51,66,36,41,38,40,39,11,12,14,3,15,16,6,9,10,4,13,5,7,8,28,23,26,29,24,27,25,18,21,32,19,33,20]}
             }]
         elif collection_ids:
             try:
@@ -117,30 +92,17 @@ def search():
                 flash("Invalid collection IDs. Please use comma-separated numeric values.", "danger")
                 return redirect(url_for("search"))
 
-        query_payload = {
-            "query": main_query,
-            "size": query_size
-        }
-
+        query_payload = {"query": main_query, "size": query_size}
         payload = json.dumps(pref_payload) + "\n" + json.dumps(query_payload) + "\n"
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0",
             "Accept": "application/json",
-            "Accept-Language": "en-GB,en;q=0.5",
-            "Accept-Encoding": "gzip, deflate, br, zstd",
             "Content-Type": "application/x-ndjson",
-            "Referer": "https://hlrv.nswlrs.com.au/",
-            "Origin": "https://hlrv.nswlrs.com.au",
-            "Sec-GPC": "1",
-            "Sec-Fetch-Dest": "empty",
-            "Sec-Fetch-Mode": "cors",
-            "Sec-Fetch-Site": "cross-site",
             "x-portal-token": ""
         }
         url = "https://api.lrsnative.com.au/hlrv/documents/_msearch?"
         try:
             logging.info(f"Searching for: {query} (type: {search_type})")
-            logging.debug(f"Sending POST to {url}\nHeaders: {headers}\nPayload: {payload}")
             api_response = requests.post(url, headers=headers, data=payload, timeout=10)
             api_response.raise_for_status()
             results = api_response.json()
@@ -148,23 +110,88 @@ def search():
             if not documents:
                 flash("No documents found for the search query.", "warning")
                 return redirect(url_for("search"))
-            # Save results and search type in session so we can use them in the template.
             session["search_results_json"] = json.dumps(documents)
             session["search_type"] = search_type
-            # For parish maps, also pass our collection mapping.
             if search_type == "parish":
                 return render_template("search_results.html", documents=documents, search_type=search_type, collection_mapping=COLLECTION_MAPPING)
             else:
                 return render_template("search_results.html", documents=documents, search_type=search_type)
-        except requests.exceptions.HTTPError:
-            logging.error(f"HTTP error {api_response.status_code}: {api_response.text}")
-            flash(f"HTTP error {api_response.status_code}: {api_response.text}", "danger")
-            return redirect(url_for("search"))
         except Exception as e:
-            logging.error(f"Error calling external API: {e}")
-            flash(f"Error during search: {str(e)}", "danger")
+            logging.error(f"Error during search: {e}")
+            flash(f"Error during search: {e}", "danger")
             return redirect(url_for("search"))
     return render_template("search.html")
+
+
+# ---------------------------
+# New "Search within Parish" Route
+# ---------------------------
+@app.route("/search_within_parish", methods=["POST"])
+def search_within_parish():
+    county = request.form.get("county", "").strip()
+    parish = request.form.get("parish", "").strip()
+    collection_group = request.form.get("collection_group", "").strip()  # Expected: crown, parish, torrens
+
+    if not parish:
+        flash("Please select a parish.", "danger")
+        return redirect(url_for("search"))
+
+    # Determine allowed collection IDs based on collection group.
+    if collection_group == "crown":
+        allowed_ids = [55, 31]
+    elif collection_group == "torrens":
+        allowed_ids = [30]
+    else:  # "parish" group
+        allowed_ids = [41,38,40,39,11,12,14,3,15,16,6,9,10,4,13,5,7,8,28,23,26,29,24,27,25,18,21,32,19,33,20]
+
+    pref_payload = {"preference": "attributeSearch"}
+    main_query = {
+        "bool": {
+            "must": [
+                {
+                    "bool": {
+                        "must": {
+                            "bool": {
+                                "should": [
+                                    {"multi_match": {"query": parish, "fields": ["parishName.lowercase"], "type": "best_fields", "operator": "or", "fuzziness": 0}},
+                                    {"multi_match": {"query": parish, "fields": ["parishName.lowercase"], "type": "phrase_prefix", "operator": "or"}}
+                                ],
+                                "minimum_should_match": 1
+                            }
+                        }
+                    }
+                }
+            ],
+            "filter": [
+                {"terms": {"collectionId": allowed_ids}}
+            ]
+        }
+    }
+    query_payload = {"query": main_query, "size": 20}
+    payload = json.dumps(pref_payload) + "\n" + json.dumps(query_payload) + "\n"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0",
+        "Accept": "application/json",
+        "Content-Type": "application/x-ndjson",
+        "x-portal-token": ""
+    }
+    url = "https://api.lrsnative.com.au/hlrv/documents/_msearch?"
+    try:
+        logging.info(f"Searching within parish: {parish} (county: {county}) with collection group: {collection_group}")
+        api_response = requests.post(url, headers=headers, data=payload, timeout=10)
+        api_response.raise_for_status()
+        results = api_response.json()
+        documents = results.get("responses", [])[0].get("hits", {}).get("hits", [])
+        if not documents:
+            flash("No documents found for the selected parish.", "warning")
+            return redirect(url_for("search"))
+        session["search_results_json"] = json.dumps(documents)
+        session["search_type"] = "parish"
+        return render_template("search_results.html", documents=documents, search_type="parish", collection_mapping=COLLECTION_MAPPING)
+    except Exception as e:
+        logging.error(f"Error in search_within_parish: {e}")
+        flash(f"Error during search: {e}", "danger")
+        return redirect(url_for("search"))
 
 ###############################################################################
 # Download Selected Documents Route (unchanged)
