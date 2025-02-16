@@ -56,7 +56,6 @@
               <th>Image Name</th>
               <th>County</th>
               <th>Parish</th>
-              <th>Location</th>
               <th>Date Created</th>
               <th>Preview</th>
             </tr>
@@ -84,7 +83,6 @@
                   {% endif %}
                 </td>
               {% else %}
-                <td>{{ source.location }}</td>
                 <td>
                   {% if source.dateCreated %}
                     {{ source.dateCreated.split(" ")[0] }}
