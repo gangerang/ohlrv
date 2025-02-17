@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(levelname)s] %(m
 @app.before_request
 def log_request_info():
     logging.info(f"Incoming request: {request.method} {request.url}")
-    # Uncomment the next line for full header details:
+    # Uncomment the next line if you need full header details:
     # logging.debug(f"Headers: {dict(request.headers)}")
     if request.method == "POST":
         logging.debug(f"Form Data: {request.form}")
@@ -42,7 +42,6 @@ SEARCH_RESULTS_CACHE = {}
 @app.route("/", methods=["GET", "POST"])
 def search():
     if request.method == "POST":
-        # This is the "general" search; it will display a search interface with all search types.
         search_str = request.form.get("search_str")
         search_type = request.form.get("search_type", "crown")  # "crown", "volfol", or "parish"
         collection_ids = request.form.get("collection_ids", "").strip()
@@ -60,7 +59,7 @@ def search():
             query = search_str
             field_name = "parishName.lowercase"
             query_size = 10000
-        else:  # crown search
+        else:
             query = f"CROWN PLAN {search_str}"
             field_name = "imageName.lowercase"
             query_size = 20
@@ -129,7 +128,6 @@ def search():
             logging.error(f"Error during general search: {e}")
             flash(f"Error during search: {e}", "danger")
             return redirect(url_for("search"))
-    # GET request: render the general search page.
     return render_template("search.html")
 
 # ---------------------------
@@ -359,6 +357,84 @@ def search_parish():
             flash(f"Error during Parish search: {e}", "danger")
             return redirect(url_for("search_parish"))
     return render_template("search_parish.html")
+
+# ---------------------------
+# New "Search within Parish" Route
+# ---------------------------
+@app.route("/search_within_parish", methods=["GET", "POST"])
+def search_within_parish():
+    if request.method == "POST":
+        county = request.form.get("county", "").strip()
+        parish = request.form.get("parish", "").strip()
+        # Expected values: "crown" or "parish" from the button pressed.
+        collection_group = request.form.get("collection_group", "").strip()
+
+        logging.debug(f"Search Within Parish: county={county}, parish={parish}, collection_group={collection_group}")
+        if not parish:
+            flash("Please enter a parish.", "danger")
+            return redirect(url_for("search"))
+        if collection_group == "crown":
+            allowed_ids = [55, 31]
+            new_search_type = "crown"
+        else:
+            allowed_ids = [41,38,40,39,11,12,14,3,15,16,6,9,10,4,13,5,7,8,28,23,26,29,24,27,25,18,21,32,19,33,20]
+            new_search_type = "parish"
+        pref_payload = {"preference": "attributeSearch"}
+        # Always search by parish name on the parishName.lowercase field.
+        main_query = {
+            "bool": {
+                "must": [
+                    {
+                        "bool": {
+                            "must": {
+                                "bool": {
+                                    "should": [
+                                        {"multi_match": {"query": parish, "fields": ["parishName.lowercase"], "type": "best_fields", "operator": "or", "fuzziness": 0}},
+                                        {"multi_match": {"query": parish, "fields": ["parishName.lowercase"], "type": "phrase_prefix", "operator": "or"}}
+                                    ],
+                                    "minimum_should_match": 1
+                                }
+                            }
+                        }
+                    }
+                ],
+                "filter": [
+                    {"terms": {"collectionId": allowed_ids}}
+                ]
+            }
+        }
+        query_payload = {"query": main_query, "size": 10000}
+        payload = json.dumps(pref_payload) + "\n" + json.dumps(query_payload) + "\n"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0",
+            "Accept": "application/json",
+            "Content-Type": "application/x-ndjson",
+            "x-portal-token": ""
+        }
+        url = "https://api.lrsnative.com.au/hlrv/documents/_msearch?"
+        try:
+            logging.info(f"Search Within Parish: Searching for parish = {parish} (county: {county}) with collection group: {collection_group}")
+            api_response = requests.post(url, headers=headers, data=payload, timeout=10)
+            api_response.raise_for_status()
+            results = api_response.json()
+            documents = results.get("responses", [])[0].get("hits", {}).get("hits", [])
+            if not documents:
+                flash("No documents found for the selected parish.", "warning")
+                return redirect(url_for("search"))
+            result_key = str(uuid.uuid4())
+            SEARCH_RESULTS_CACHE[result_key] = documents
+            session["search_results_key"] = result_key
+            session["search_type"] = new_search_type
+            if new_search_type == "parish":
+                return render_template("search_results.html", documents=documents, search_type="parish", collection_mapping=COLLECTION_MAPPING)
+            else:
+                return render_template("search_results.html", documents=documents, search_type=new_search_type)
+        except Exception as e:
+            logging.error(f"Error in Search Within Parish: {e}")
+            flash(f"Error during search: {e}", "danger")
+            return redirect(url_for("search"))
+    # For GET requests, simply render the general search page.
+    return render_template("search.html")
 
 # ---------------------------
 # Download Selected Documents Route
