@@ -55,7 +55,7 @@ def search():
         if search_type == "volfol":
             query = search_str
             field_name = "volFol.lowercase"
-            query_size = 20
+            query_size = 10000
         elif search_type == "parish":
             query = search_str
             field_name = "parishName.lowercase"
@@ -63,7 +63,7 @@ def search():
         else:  # crown search
             query = f"CROWN PLAN {search_str}"
             field_name = "imageName.lowercase"
-            query_size = 20
+            query_size = 10000
 
         pref_payload = {"preference": "attributeSearch"}
         main_query = {
