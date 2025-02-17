@@ -44,8 +44,8 @@
               <th>Image Name</th>
               <th>County</th>
               <th>Parish</th>
-              <th>Year</th>
               <th>Edition</th>
+              <th>Sheet</th>
               <th>Type</th>
               <th>Collection</th>
               <th>Preview</th>
@@ -71,8 +71,8 @@
                 <td>{{ source.imageName }}</td>
                 <td>{{ source.countyName }}</td>
                 <td>{{ source.parishName }}</td>
-                <td>{{ source.editionYear if source.editionYear is defined else "" }}</td>
                 <td>{{ source.editionNumber if source.editionNumber is defined else "" }}</td>
+                <td>{{ source.sheetReference }}</td>
                 <td>
                   {% if source.collectionId and collection_mapping[source.collectionId] is defined %}
                     {{ collection_mapping[source.collectionId][0] }}
