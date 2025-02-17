@@ -2,9 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Select Documents to Download</title>
+  <title>Search Results - {{ search_type|capitalize }} Search</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
-  <!-- Load sorttable.js from local static folder -->
   <script src="{{ url_for('static', filename='js/sorttable.js') }}"></script>
   <style>
     th.sortheader { cursor: pointer; }
@@ -12,7 +11,7 @@
 </head>
 <body>
   <div class="container">
-    <h1 class="mt-5">Search Results</h1>
+    <h1 class="mt-5">Search Results - {{ search_type|capitalize }} Search</h1>
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
         {% for category, message in messages %}
@@ -23,22 +22,43 @@
       {% endif %}
     {% endwith %}
     
-    <!-- Display number of results at the top -->
+    <!-- Top Controls -->
     <div class="mb-3">
       <strong>{{ documents|length }} results returned.</strong>
     </div>
+    <div class="mb-3">
+      <button type="submit" form="downloadFormTop" class="btn btn-primary">Download Selected Documents</button>
+      <a href="{{ url_for('search') }}" class="btn btn-link">Back to Search</a>
+    </div>
     
-    <!-- Wrap everything in one form -->
-    <form method="post" action="{{ url_for('download_selected') }}">
-      <!-- Top Controls -->
-      <div class="mb-3">
-        <button type="submit" class="btn btn-primary">Download Selected Documents</button>
-        <a href="{{ url_for('search') }}" class="btn btn-link">Back to Search</a>
-      </div>
-      
+    <!-- Form wrapping the table -->
+    <form method="post" action="{{ url_for('download_selected') }}" id="downloadFormTop">
       <table class="table table-bordered mt-3 sortable" id="resultsTable">
         <thead>
-          {% if search_type == "parish" %}
+          {% if search_type == "dp" %}
+            <tr>
+              <th class="sorttable_nosort"><input type="checkbox" id="select_all"></th>
+              <th>Image Name</th>
+              <th>Preview</th>
+            </tr>
+          {% elif search_type == "volfol" %}
+            <tr>
+              <th class="sorttable_nosort"><input type="checkbox" id="select_all"></th>
+              <th>Image Name</th>
+              <th>Notes</th>
+              <th>Preview</th>
+            </tr>
+          {% elif search_type == "crown" %}
+            <tr>
+              <th class="sorttable_nosort"><input type="checkbox" id="select_all"></th>
+              <th>Plan Number</th>
+              <th>Source</th>
+              <th>County</th>
+              <th>Parish</th>
+              <th>Date</th>
+              <th>Preview</th>
+            </tr>
+          {% elif search_type == "parish" %}
             <tr>
               <th class="sorttable_nosort"><input type="checkbox" id="select_all"></th>
               <th>Image Name</th>
@@ -50,16 +70,6 @@
               <th>Collection</th>
               <th>Preview</th>
             </tr>
-          {% else %}
-            <tr>
-              <th class="sorttable_nosort"><input type="checkbox" id="select_all"></th>
-              <th>Number</th>
-              <th>Type</th>
-              <th>County</th>
-              <th>Parish</th>
-              <th>Date</th>
-              <th>Preview</th>
-            </tr>
           {% endif %}
         </thead>
         <tbody>
@@ -67,12 +77,62 @@
             {% set source = doc._source %}
             <tr>
               <td><input type="checkbox" name="selected" value="{{ doc._id }}" class="doc_checkbox"></td>
-              {% if search_type == "parish" %}
+              {% if search_type == "dp" %}
+                <td>{{ source.imageName }}</td>
+                <td>
+                  {% if source.images and source.images|length > 0 %}
+                    {% for image in source.images %}
+                      {% set full_path = image.location ~ '/' ~ image.fileName %}
+                      {% set encoded_path = full_path | custom_quote %}
+                      <a target="_blank" href="https://api.lrsnative.com.au/hlrv/iiif/2/{{ encoded_path }}/full/1024,/0/default.jpg">
+                        {{ image.fileName }}
+                      </a>{% if not loop.last %}, {% endif %}
+                    {% endfor %}
+                  {% endif %}
+                </td>
+              {% elif search_type == "volfol" %}
+                <td>{{ source.imageName }}</td>
+                <td>{{ source.notes if source.notes is defined else "" }}</td>
+                <td>
+                  {% if source.images and source.images|length > 0 %}
+                    {% for image in source.images %}
+                      {% set full_path = image.location ~ '/' ~ image.fileName %}
+                      {% set encoded_path = full_path | custom_quote %}
+                      <a target="_blank" href="https://api.lrsnative.com.au/hlrv/iiif/2/{{ encoded_path }}/full/1024,/0/default.jpg">
+                        {{ image.fileName }}
+                      </a>{% if not loop.last %}, {% endif %}
+                    {% endfor %}
+                  {% endif %}
+                </td>
+              {% elif search_type == "crown" %}
+                <td>{{ source.crownPlanNumber }}</td>
+                <td>{{ "SR" if source.sourceOffice == "STATE RECORDS" else "BS" }}</td>
+                <td>{{ source.countyName }}</td>
+                <td>{{ source.parishName }}</td>
+                <td>
+                  {% if source.dateCreated %}
+                    {{ source.dateCreated.split(" ")[0] }}
+                  {% elif source.scanTimestamp %}
+                    {{ source.scanTimestamp.split(" ")[0] }}
+                  {% endif %}
+                </td>
+                <td>
+                  {% if source.images and source.images|length > 0 %}
+                    {% for image in source.images %}
+                      {% set full_path = image.location ~ '/' ~ image.fileName %}
+                      {% set encoded_path = full_path | custom_quote %}
+                      <a target="_blank" href="https://api.lrsnative.com.au/hlrv/iiif/2/{{ encoded_path }}/full/1024,/0/default.jpg">
+                        {{ image.fileName }}
+                      </a>{% if not loop.last %}, {% endif %}
+                    {% endfor %}
+                  {% endif %}
+                </td>
+              {% elif search_type == "parish" %}
                 <td>{{ source.imageName }}</td>
                 <td>{{ source.countyName }}</td>
                 <td>{{ source.parishName }}</td>
                 <td>{{ source.editionNumber if source.editionNumber is defined else "" }}</td>
-                <td>{{ source.sheetReference }}</td>
+                <td>{{ source.sheetReference if source.sheetReference is defined else "" }}</td>
                 <td>
                   {% if source.collectionId and collection_mapping[source.collectionId] is defined %}
                     {{ collection_mapping[source.collectionId][0] }}
@@ -83,30 +143,18 @@
                     {{ collection_mapping[source.collectionId][1] }}
                   {% endif %}
                 </td>
-              {% else %}
-              <td>{{ source.crownPlanNumber }}</td>
-              <td>{{ 'SR' if source.sourceOffice == 'STATE RECORDS' else 'BS' }}</td>
-              <td>{{ source.countyName }}</td>
-              <td>{{ source.parishName }}</td>
                 <td>
-                  {% if source.dateCreated %}
-                    {{ source.dateCreated.split(" ")[0] }}
-                  {% elif source.scanTimestamp %}
-                    {{ source.scanTimestamp.split(" ")[0] }}
+                  {% if source.images and source.images|length > 0 %}
+                    {% for image in source.images %}
+                      {% set full_path = image.location ~ '/' ~ image.fileName %}
+                      {% set encoded_path = full_path | custom_quote %}
+                      <a target="_blank" href="https://api.lrsnative.com.au/hlrv/iiif/2/{{ encoded_path }}/full/1024,/0/default.jpg">
+                        {{ image.fileName }}
+                      </a>{% if not loop.last %}, {% endif %}
+                    {% endfor %}
                   {% endif %}
                 </td>
               {% endif %}
-              <td>
-                {% if source.images and source.images|length > 0 %}
-                  {% for image in source.images %}
-                    {% set full_path = image.location ~ '/' ~ image.fileName %}
-                    {% set encoded_path = full_path | custom_quote %}
-                    <a target="_blank" href="https://api.lrsnative.com.au/hlrv/iiif/2/{{ encoded_path }}/full/1024,/0/default.jpg">
-                      {{ image.fileName }}
-                    </a>{% if not loop.last %}, {% endif %}
-                  {% endfor %}
-                {% endif %}
-              </td>
             </tr>
           {% endfor %}
         </tbody>
