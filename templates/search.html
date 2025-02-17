@@ -128,6 +128,30 @@
       </form>
     </div>
     
+    <!-- Search Within Parish Section -->
+    <div class="mb-5">
+      <h2>Search within Parish</h2>
+      <form method="post" action="{{ url_for('search_within_parish') }}">
+        <div class="row mb-3">
+          <div class="col-md-6">
+            <label for="county" class="form-label">County:</label>
+            <input type="text" id="county" name="county" class="form-control" list="countyList" autocomplete="off" placeholder="Start typing county...">
+            <datalist id="countyList"></datalist>
+          </div>
+          <div class="col-md-6">
+            <label for="parish" class="form-label">Parish:</label>
+            <input type="text" id="parish" name="parish" class="form-control" list="parishList" autocomplete="off" placeholder="Start typing parish...">
+            <datalist id="parishList"></datalist>
+          </div>
+        </div>
+        <div class="mb-3">
+          <!-- Two side-by-side buttons for the different collection groups -->
+          <button type="submit" name="collection_group" value="parish" class="btn btn-primary">Get parish maps</button>
+          <button type="submit" name="collection_group" value="crown" class="btn btn-primary">Get crown plans</button>
+        </div>
+      </form>
+    </div>
+    
     <a href="{{ url_for('index') }}" class="btn btn-link">View Legacy Version</a>
   </div>
 </body>

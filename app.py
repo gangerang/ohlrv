@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(levelname)s] %(m
 @app.before_request
 def log_request_info():
     logging.info(f"Incoming request: {request.method} {request.url}")
-    # Uncomment the next line if you need full header details.
+    # Uncomment the next line for full header details:
     # logging.debug(f"Headers: {dict(request.headers)}")
     if request.method == "POST":
         logging.debug(f"Form Data: {request.form}")
@@ -33,11 +33,107 @@ if os.path.exists(mapping_file):
 else:
     logging.warning("Mapping file collection_type_name.json not found.")
 
-# Global cache to store search results (to avoid cookie size limits)
+# Global cache for search results to avoid oversized session cookies.
 SEARCH_RESULTS_CACHE = {}
 
 # ---------------------------
-# DP Search Route (new)
+# General Search Route (Landing Page)
+# ---------------------------
+@app.route("/", methods=["GET", "POST"])
+def search():
+    if request.method == "POST":
+        # This is the "general" search; it will display a search interface with all search types.
+        search_str = request.form.get("search_str")
+        search_type = request.form.get("search_type", "crown")  # "crown", "volfol", or "parish"
+        collection_ids = request.form.get("collection_ids", "").strip()
+
+        logging.debug(f"General Search: search_str={search_str}, search_type={search_type}, collection_ids={collection_ids}")
+        if not search_str:
+            flash("Please provide a search term.", "danger")
+            return redirect(url_for("search"))
+
+        if search_type == "volfol":
+            query = search_str
+            field_name = "volFol.lowercase"
+            query_size = 20
+        elif search_type == "parish":
+            query = search_str
+            field_name = "parishName.lowercase"
+            query_size = 10000
+        else:  # crown search
+            query = f"CROWN PLAN {search_str}"
+            field_name = "imageName.lowercase"
+            query_size = 20
+
+        pref_payload = {"preference": "attributeSearch"}
+        main_query = {
+            "bool": {
+                "must": [
+                    {
+                        "bool": {
+                            "must": {
+                                "bool": {
+                                    "should": [
+                                        {"multi_match": {"query": query, "fields": [field_name], "type": "best_fields", "operator": "or", "fuzziness": 0}},
+                                        {"multi_match": {"query": query, "fields": [field_name], "type": "phrase_prefix", "operator": "or"}}
+                                    ],
+                                    "minimum_should_match": 1
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        }
+
+        if search_type == "parish":
+            main_query["bool"]["filter"] = [{
+                "terms": {"collectionId": [51,66,36,41,38,40,39,11,12,14,3,15,16,6,9,10,4,13,5,7,8,28,23,26,29,24,27,25,18,21,32,19,33,20]}
+            }]
+        elif collection_ids:
+            try:
+                collections = [int(x.strip()) for x in collection_ids.split(",") if x.strip()]
+                main_query["bool"]["filter"] = [{"terms": {"collectionId": collections}}]
+            except Exception as e:
+                flash("Invalid collection IDs. Please use comma-separated numeric values.", "danger")
+                return redirect(url_for("search"))
+
+        query_payload = {"query": main_query, "size": query_size}
+        payload = json.dumps(pref_payload) + "\n" + json.dumps(query_payload) + "\n"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0",
+            "Accept": "application/json",
+            "Content-Type": "application/x-ndjson",
+            "x-portal-token": ""
+        }
+        url = "https://api.lrsnative.com.au/hlrv/documents/_msearch?"
+        try:
+            logging.info(f"General Search: Searching for: {query} (type: {search_type})")
+            api_response = requests.post(url, headers=headers, data=payload, timeout=10)
+            api_response.raise_for_status()
+            results = api_response.json()
+            documents = results.get("responses", [])[0].get("hits", {}).get("hits", [])
+            if not documents:
+                flash("No documents found for the search query.", "warning")
+                return redirect(url_for("search"))
+            logging.debug(f"search_results_json: {json.dumps(documents)}")
+            result_key = str(uuid.uuid4())
+            SEARCH_RESULTS_CACHE[result_key] = documents
+            session["search_results_key"] = result_key
+            session["search_type"] = search_type
+            if search_type == "parish":
+                return render_template("search_results.html", documents=documents, search_type=search_type, collection_mapping=COLLECTION_MAPPING)
+            else:
+                return render_template("search_results.html", documents=documents, search_type=search_type)
+        except Exception as e:
+            logging.error(f"Error during general search: {e}")
+            flash(f"Error during search: {e}", "danger")
+            return redirect(url_for("search"))
+    # GET request: render the general search page.
+    return render_template("search.html")
+
+# ---------------------------
+# DP Search Route
 # ---------------------------
 @app.route("/search_dp", methods=["GET", "POST"])
 def search_dp():
@@ -52,9 +148,7 @@ def search_dp():
         except Exception as e:
             flash("DP number must be an integer.", "danger")
             return redirect(url_for("search_dp"))
-        # For DP search: search on field dpNumber and filter on collectionId 51.
         pref_payload = {"preference": "attributeSearch"}
-        # We'll use a term query for an exact match on dpNumber.
         main_query = {
             "bool": {
                 "must": [
@@ -96,7 +190,7 @@ def search_dp():
     return render_template("search_dp.html")
 
 # ---------------------------
-# Vol Fol Search Route (existing)
+# Vol Fol Search Route
 # ---------------------------
 @app.route("/search_volfol", methods=["GET", "POST"])
 def search_volfol():
@@ -149,7 +243,7 @@ def search_volfol():
     return render_template("search_volfol.html")
 
 # ---------------------------
-# Crown Plans Search Route (existing, with modifications)
+# Crown Plans Search Route
 # ---------------------------
 @app.route("/search_crown", methods=["GET", "POST"])
 def search_crown():
@@ -217,7 +311,7 @@ def search_crown():
     return render_template("search_crown.html")
 
 # ---------------------------
-# Parish Search Route (existing)
+# Parish Search Route
 # ---------------------------
 @app.route("/search_parish", methods=["GET", "POST"])
 def search_parish():
