@@ -55,10 +55,11 @@
     <!-- DP Search Section -->
     <div class="mb-5">
       <h2>DP Search</h2>
-      <form method="post" action="{{ url_for('search_dp') }}">
+      <form method="post" action="{{ url_for('search') }}">
+        <input type="hidden" name="search_type" value="dp">
         <div class="mb-3">
           <label for="dp_number" class="form-label">Enter DP Number:</label>
-          <!-- Normal text input; validation happens in the route -->
+          <!-- DP search remains a text input -->
           <input type="text" id="dp_number" name="dp_number" class="form-control" placeholder="Enter DP Number" required>
         </div>
         <button type="submit" class="btn btn-primary">Search DP</button>
@@ -68,10 +69,11 @@
     <!-- Vol Fol Search Section -->
     <div class="mb-5">
       <h2>Vol Fol Search</h2>
-      <form method="post" action="{{ url_for('search_volfol') }}">
+      <form method="post" action="{{ url_for('search') }}">
+        <input type="hidden" name="search_type" value="volfol">
         <div class="mb-3">
           <label for="volfol" class="form-label">Enter Vol Fol:</label>
-          <input type="text" id="volfol" name="volfol" class="form-control" placeholder="Enter Vol Fol" required>
+          <input type="text" id="volfol" name="search_str" class="form-control" placeholder="Enter Vol Fol" required>
         </div>
         <button type="submit" class="btn btn-primary">Search Vol Fol</button>
       </form>
@@ -80,10 +82,11 @@
     <!-- Crown Plans Search Section -->
     <div class="mb-5">
       <h2>Crown Plans Search</h2>
-      <form method="post" action="{{ url_for('search_crown') }}">
+      <form method="post" action="{{ url_for('search') }}">
+        <input type="hidden" name="search_type" value="crown">
         <div class="mb-3">
-          <label for="search_str_crown" class="form-label">Enter Crown Plan Number:</label>
-          <input type="text" id="search_str_crown" name="search_str" class="form-control" placeholder="Enter Crown Plan Number" required>
+          <label for="search_str_crown" class="form-label">Enter Crown Plan Number (optional):</label>
+          <input type="text" id="search_str_crown" name="search_str" class="form-control" placeholder="Enter Crown Plan Number (leave blank to search by county/parish)">
         </div>
         <div class="row mb-3">
           <div class="col-md-6">
@@ -112,7 +115,8 @@
     <!-- Parish Search Section -->
     <div class="mb-5">
       <h2>Parish Search</h2>
-      <form method="post" action="{{ url_for('search_parish') }}">
+      <form method="post" action="{{ url_for('search') }}">
+        <input type="hidden" name="search_type" value="parish">
         <div class="row mb-3">
           <div class="col-md-6">
             <label for="county_parish" class="form-label">County:</label>
@@ -126,30 +130,6 @@
           </div>
         </div>
         <button type="submit" class="btn btn-primary">Search Parish</button>
-      </form>
-    </div>
-    
-    <!-- Search Within Parish Section -->
-    <div class="mb-5">
-      <h2>Search within Parish</h2>
-      <form method="post" action="{{ url_for('search_within_parish') }}">
-        <div class="row mb-3">
-          <div class="col-md-6">
-            <label for="county" class="form-label">County:</label>
-            <input type="text" id="county" name="county" class="form-control" list="countyList" autocomplete="off" placeholder="Start typing county...">
-            <datalist id="countyList"></datalist>
-          </div>
-          <div class="col-md-6">
-            <label for="parish" class="form-label">Parish:</label>
-            <input type="text" id="parish" name="parish" class="form-control" list="parishList" autocomplete="off" placeholder="Start typing parish...">
-            <datalist id="parishList"></datalist>
-          </div>
-        </div>
-        <div class="mb-3">
-          <!-- Two side-by-side buttons for collection groups -->
-          <button type="submit" name="collection_group" value="parish" class="btn btn-primary">Get parish maps</button>
-          <button type="submit" name="collection_group" value="crown" class="btn btn-primary">Get crown plans</button>
-        </div>
       </form>
     </div>
     
