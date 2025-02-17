@@ -45,9 +45,8 @@ QUERY_SIZE = 10000
 @app.route("/", methods=["GET", "POST"])
 def search():
     if request.method == "POST":
-        # This form handles DP, Vol Fol, Crown Plans, and Parish searches.
-        # The form must include a hidden field named "search_type"
-        search_type = request.form.get("search_type")
+        # The form handles DP, Vol Fol, Crown Plans, and Parish searches.
+        search_type = request.form.get("search_type")  # expected: "dp", "volfol", "crown", or "parish"
         logging.debug(f"Landing Search: search_type={search_type}")
         
         # -------- DP Search --------
@@ -63,7 +62,6 @@ def search():
                 flash("DP number must be numeric.", "danger")
                 return redirect(url_for("search"))
             pref_payload = {"preference": "attributeSearch"}
-            # Updated DP query using dpNumber.keyword (static QUERY_SIZE)
             main_query = {
                 "bool": {
                     "must": [
@@ -90,7 +88,8 @@ def search():
 
         # -------- Vol Fol Search --------
         elif search_type == "volfol":
-            volfol = request.form.get("volfol", "").strip()
+            # Change here: use "search_str" since that’s what the form uses.
+            volfol = request.form.get("search_str", "").strip()
             logging.debug(f"Vol Fol Search: volfol={volfol}")
             if not volfol:
                 flash("Please enter a Vol Fol value.", "danger")
