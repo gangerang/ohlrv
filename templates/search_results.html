@@ -53,10 +53,11 @@
           {% else %}
             <tr>
               <th class="sorttable_nosort"><input type="checkbox" id="select_all"></th>
-              <th>Image Name</th>
+              <th>Number</th>
+              <th>Type</th>
               <th>County</th>
               <th>Parish</th>
-              <th>Date Created</th>
+              <th>Date</th>
               <th>Preview</th>
             </tr>
           {% endif %}
@@ -66,10 +67,10 @@
             {% set source = doc._source %}
             <tr>
               <td><input type="checkbox" name="selected" value="{{ doc._id }}" class="doc_checkbox"></td>
-              <td>{{ source.imageName }}</td>
-              <td>{{ source.countyName }}</td>
-              <td>{{ source.parishName }}</td>
               {% if search_type == "parish" %}
+                <td>{{ source.imageName }}</td>
+                <td>{{ source.countyName }}</td>
+                <td>{{ source.parishName }}</td>
                 <td>{{ source.editionYear if source.editionYear is defined else "" }}</td>
                 <td>{{ source.editionNumber if source.editionNumber is defined else "" }}</td>
                 <td>
@@ -83,6 +84,10 @@
                   {% endif %}
                 </td>
               {% else %}
+              <td>{{ source.crownPlanNumber }}</td>
+              <td>{{ 'SR' if source.sourceOffice == 'STATE RECORDS' else 'BS' }}</td>
+              <td>{{ source.countyName }}</td>
+              <td>{{ source.parishName }}</td>
                 <td>
                   {% if source.dateCreated %}
                     {{ source.dateCreated.split(" ")[0] }}
