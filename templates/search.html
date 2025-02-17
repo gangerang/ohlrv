@@ -58,7 +58,8 @@
       <form method="post" action="{{ url_for('search_dp') }}">
         <div class="mb-3">
           <label for="dp_number" class="form-label">Enter DP Number:</label>
-          <input type="number" id="dp_number" name="dp_number" class="form-control" placeholder="Enter DP Number" required>
+          <!-- Normal text input; validation happens in the route -->
+          <input type="text" id="dp_number" name="dp_number" class="form-control" placeholder="Enter DP Number" required>
         </div>
         <button type="submit" class="btn btn-primary">Search DP</button>
       </form>

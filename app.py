@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(levelname)s] %(m
 @app.before_request
 def log_request_info():
     logging.info(f"Incoming request: {request.method} {request.url}")
-    # Uncomment the next line if you need full header details:
+    # Uncomment below for full header details:
     # logging.debug(f"Headers: {dict(request.headers)}")
     if request.method == "POST":
         logging.debug(f"Form Data: {request.form}")
@@ -33,7 +33,7 @@ if os.path.exists(mapping_file):
 else:
     logging.warning("Mapping file collection_type_name.json not found.")
 
-# Global cache for search results to avoid oversized session cookies.
+# Global cache for search results (to avoid oversized session cookies)
 SEARCH_RESULTS_CACHE = {}
 
 # ---------------------------
@@ -42,6 +42,7 @@ SEARCH_RESULTS_CACHE = {}
 @app.route("/", methods=["GET", "POST"])
 def search():
     if request.method == "POST":
+        # This form is used for the general search (for crown, volfol, parish)
         search_str = request.form.get("search_str")
         search_type = request.form.get("search_type", "crown")  # "crown", "volfol", or "parish"
         collection_ids = request.form.get("collection_ids", "").strip()
@@ -59,7 +60,7 @@ def search():
             query = search_str
             field_name = "parishName.lowercase"
             query_size = 10000
-        else:
+        else:  # crown search
             query = f"CROWN PLAN {search_str}"
             field_name = "imageName.lowercase"
             query_size = 20
@@ -131,61 +132,92 @@ def search():
     return render_template("search.html")
 
 # ---------------------------
-# DP Search Route
+# DP Search Route (Now DP search is part of search.html)
 # ---------------------------
 @app.route("/search_dp", methods=["GET", "POST"])
 def search_dp():
-    if request.method == "POST":
-        dp_number = request.form.get("dp_number", "").strip()
-        logging.debug(f"DP Search: dp_number = {dp_number}")
-        if not dp_number:
-            flash("Please enter a DP number.", "danger")
-            return redirect(url_for("search_dp"))
-        try:
-            dp_int = int(dp_number)
-        except Exception as e:
-            flash("DP number must be an integer.", "danger")
-            return redirect(url_for("search_dp"))
-        pref_payload = {"preference": "attributeSearch"}
-        main_query = {
-            "bool": {
-                "must": [
-                    {"term": {"dpNumber": dp_int}}
+    # For GET, simply redirect to the landing page.
+    if request.method == "GET":
+        return redirect(url_for("search"))
+    # For POST, process the DP search.
+    dp_number = request.form.get("dp_number", "").strip()
+    logging.debug(f"DP Search: dp_number = {dp_number}")
+    if not dp_number:
+        flash("Please enter a DP number.", "danger")
+        return redirect(url_for("search"))
+    try:
+        dp_int = int(dp_number)
+    except Exception as e:
+        flash("DP number must be numeric.", "danger")
+        return redirect(url_for("search"))
+    pref_payload = {"preference": "attributeSearch"}
+    main_query = {
+    "bool": {
+    "must": [
+        {
+        "bool": {
+            "must": [
+            {
+                "bool": {
+                "should": [
+                    {
+                    "multi_match": {
+                        "query": str(dp_int),
+                        "fields": ["dpNumber.keyword"],
+                        "type": "best_fields",
+                        "operator": "or",
+                        "fuzziness": 0
+                    }
+                    },
+                    {
+                    "multi_match": {
+                        "query": str(dp_int),
+                        "fields": ["dpNumber.keyword"],
+                        "type": "phrase_prefix",
+                        "operator": "or"
+                    }
+                    }
                 ],
-                "filter": [
-                    {"term": {"collectionId": 51}}
-                ]
-            }
+                "minimum_should_match": "1"
+                }
+            },
+            {"match_all": {}}
+            ]
         }
-        query_payload = {"query": main_query, "size": 10000}
-        payload = json.dumps(pref_payload) + "\n" + json.dumps(query_payload) + "\n"
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0",
-            "Accept": "application/json",
-            "Content-Type": "application/x-ndjson",
-            "x-portal-token": ""
         }
-        url = "https://api.lrsnative.com.au/hlrv/documents/_msearch?"
-        try:
-            logging.info(f"DP Search: Searching for dpNumber = {dp_int}")
-            api_response = requests.post(url, headers=headers, data=payload, timeout=10)
-            api_response.raise_for_status()
-            results = api_response.json()
-            documents = results.get("responses", [])[0].get("hits", {}).get("hits", [])
-            if not documents:
-                flash("No DP records found.", "warning")
-                return redirect(url_for("search_dp"))
-            logging.debug(f"DP search results: {json.dumps(documents)}")
-            result_key = str(uuid.uuid4())
-            SEARCH_RESULTS_CACHE[result_key] = documents
-            session["search_results_key"] = result_key
-            session["search_type"] = "dp"
-            return render_template("search_results.html", documents=documents, search_type="dp")
-        except Exception as e:
-            logging.error(f"Error during DP search: {e}")
-            flash(f"Error during DP search: {e}", "danger")
-            return redirect(url_for("search_dp"))
-    return render_template("search_dp.html")
+    ]
+    }
+    }
+    query_payload = {"query": main_query, "size": 10000}
+    logging.debug(f"payload: {query_payload}")
+    payload = json.dumps(pref_payload) + "\n" + json.dumps(query_payload) + "\n"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0",
+        "Accept": "application/json",
+        "Content-Type": "application/x-ndjson",
+        "x-portal-token": ""
+    }
+    url = "https://api.lrsnative.com.au/hlrv/documents/_msearch?"
+    try:
+        logging.info(f"DP Search: Searching for dpNumber = {dp_int}")
+        api_response = requests.post(url, headers=headers, data=payload, timeout=10)
+        api_response.raise_for_status()
+        results = api_response.json()
+        logging.debug(f"results: {results}")
+        documents = results.get("responses", [])[0].get("hits", {}).get("hits", [])
+        if not documents:
+            flash("No DP records found.", "warning")
+            return redirect(url_for("search"))
+        logging.debug(f"DP search results: {json.dumps(documents)}")
+        result_key = str(uuid.uuid4())
+        SEARCH_RESULTS_CACHE[result_key] = documents
+        session["search_results_key"] = result_key
+        session["search_type"] = "dp"
+        return render_template("search_results.html", documents=documents, search_type="dp")
+    except Exception as e:
+        logging.error(f"Error during DP search: {e}")
+        flash(f"Error during DP search: {e}", "danger")
+        return redirect(url_for("search"))
 
 # ---------------------------
 # Vol Fol Search Route
@@ -227,7 +259,7 @@ def search_volfol():
             documents = results.get("responses", [])[0].get("hits", {}).get("hits", [])
             if not documents:
                 flash("No Vol Fol records found.", "warning")
-                return redirect(url_for("search_volfol"))
+                return redirect(url_for("search"))
             logging.debug(f"Vol Fol search results: {json.dumps(documents)}")
             result_key = str(uuid.uuid4())
             SEARCH_RESULTS_CACHE[result_key] = documents
@@ -237,7 +269,7 @@ def search_volfol():
         except Exception as e:
             logging.error(f"Error during Vol Fol search: {e}")
             flash(f"Error during Vol Fol search: {e}", "danger")
-            return redirect(url_for("search_volfol"))
+            return redirect(url_for("search"))
     return render_template("search_volfol.html")
 
 # ---------------------------
@@ -359,7 +391,7 @@ def search_parish():
     return render_template("search_parish.html")
 
 # ---------------------------
-# New "Search within Parish" Route
+# New "Search within Parish" Route (supports GET so url_for works)
 # ---------------------------
 @app.route("/search_within_parish", methods=["GET", "POST"])
 def search_within_parish():
@@ -368,7 +400,6 @@ def search_within_parish():
         parish = request.form.get("parish", "").strip()
         # Expected values: "crown" or "parish" from the button pressed.
         collection_group = request.form.get("collection_group", "").strip()
-
         logging.debug(f"Search Within Parish: county={county}, parish={parish}, collection_group={collection_group}")
         if not parish:
             flash("Please enter a parish.", "danger")
@@ -433,7 +464,7 @@ def search_within_parish():
             logging.error(f"Error in Search Within Parish: {e}")
             flash(f"Error during search: {e}", "danger")
             return redirect(url_for("search"))
-    # For GET requests, simply render the general search page.
+    # For GET requests, render the landing search page.
     return render_template("search.html")
 
 # ---------------------------
@@ -469,8 +500,8 @@ def download_selected():
         images = source.get("images", [])
         for image in images:
             try:
-                location = image.get("location")  # e.g., "eirCP/BS/1-100/15"
-                fileName = image.get("fileName")   # e.g., "BS_650_1538J1.jp2"
+                location = image.get("location")
+                fileName = image.get("fileName")
                 path = f"{location}/{fileName}"
                 encoded = quote(path, safe='')
                 info_url = f"https://api.lrsnative.com.au/hlrv/iiif/2/{encoded}/info.json"
