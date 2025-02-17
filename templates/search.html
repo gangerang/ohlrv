@@ -59,7 +59,7 @@
         <input type="hidden" name="search_type" value="crown">
         <div class="mb-3">
           <label for="search_str_crown" class="form-label">Enter Crown Plan Number (optional):</label>
-          <input type="text" id="search_str_crown" name="search_str" class="form-control" placeholder="Enter Crown Plan Number (leave blank to search by county/parish)">
+          <input type="text" id="search_str_crown" name="search_str" class="form-control" placeholder="Enter Crown Plan Number... eg 296-3090 (leave blank to search by county/parish)">
         </div>
         <div class="row mb-3">
           <div class="col-md-6">
@@ -102,7 +102,7 @@
             <datalist id="parishList"></datalist>
           </div>
         </div>
-        <button type="submit" class="btn btn-primary">Search Parish</button>
+        <button type="submit" class="btn btn-primary">Search Parish Maps</button>
       </form>
     </div>
     
@@ -112,8 +112,8 @@
       <form method="post" action="{{ url_for('search') }}">
         <input type="hidden" name="search_type" value="volfol">
         <div class="mb-3">
-          <label for="volfol" class="form-label">Enter Vol Fol:</label>
-          <input type="text" id="volfol" name="search_str" class="form-control" placeholder="Enter Vol Fol" required>
+          <label for="volfol" class="form-label">Enter Vol-Fol for old form torrens title:</label>
+          <input type="text" id="volfol" name="search_str" class="form-control" placeholder="Enter Vol-Fol... eg 1-100" required>
         </div>
         <button type="submit" class="btn btn-primary">Search Vol Fol</button>
       </form>
@@ -126,7 +126,7 @@
         <input type="hidden" name="search_type" value="dp">
         <div class="mb-3">
           <label for="dp_number" class="form-label">Enter DP Number:</label>
-          <input type="text" id="dp_number" name="dp_number" class="form-control" placeholder="Enter DP Number" required>
+          <input type="text" id="dp_number" name="dp_number" class="form-control" placeholder="Enter DP Number... eg 500050" required>
         </div>
         <button type="submit" class="btn btn-primary">Search DP</button>
       </form>
