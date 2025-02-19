@@ -67,6 +67,9 @@ SEARCH_RESULTS_CACHE = {}
 # Static query size for all searches
 QUERY_SIZE = 10000
 
+DOWNLOAD_DIR = os.path.join(os.path.dirname(__file__), "downloads")
+os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+
 # ---------------------------
 # General Search Route (Landing Page)
 # ---------------------------
@@ -301,10 +304,10 @@ def download_selected():
                     if isinstance(image_json["profile"][1], dict) and "formats" in image_json["profile"][1]:
                         image_json["profile"][1]["formats"] = ["jpg"]
                 manifest_modified = json.dumps(image_json)
-                temp_manifest = f"/tmp/manifest_{doc_id}_{fileName}.json"
+                temp_manifest = os.path.join(DOWNLOAD_DIR, f"manifest_{doc_id}_{fileName}.json")
                 with open(temp_manifest, "w") as f:
                     f.write(manifest_modified)
-                output_filename = fileName.replace('.jp2', '.jpg')
+                output_filename = os.path.join(DOWNLOAD_DIR, fileName.replace('.jp2', '.jpg'))
                 if not os.path.exists(output_filename):
                     result = subprocess.run([PATH_DEZOOMIFY, '-l', temp_manifest, output_filename, '--logging', 'debug'], capture_output=True)
                     if result.returncode != 0:
@@ -329,10 +332,10 @@ def download_selected():
         response.call_on_close(lambda: os.remove(file_to_send))
         return response
     else:
-        zip_filename = "downloaded_images.zip"
+        zip_filename = os.path.join(DOWNLOAD_DIR, "downloaded_images.zip")
         with zipfile.ZipFile(zip_filename, "w") as zipf:
             for file in downloaded_files:
-                zipf.write(file)
+                zipf.write(file, os.path.basename(file))
         response = send_file(zip_filename, as_attachment=True)
         def cleanup():
             os.remove(zip_filename)
