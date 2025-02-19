@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from flask import Flask, render_template, request, redirect, url_for, flash, send_file, session
-import requests, json, subprocess, logging, os, zipfile, uuid
+import requests, json, subprocess, logging, os, zipfile, uuid, csv
 from urllib.parse import quote
 
 app = Flask(__name__)
@@ -33,6 +33,14 @@ if os.path.exists(mapping_file):
 else:
     logging.warning("Mapping file collection_type_name.json not found.")
 
+# Load crown plans data from CSV
+CROWN_PLANS_DATA = {}
+csv_file_path = os.path.join(os.path.dirname(__file__), "static", "data", "crown_plans.csv")
+with open(csv_file_path, mode='r') as csv_file:
+    csv_reader = csv.DictReader(csv_file)
+    for row in csv_reader:
+        key = f"{row['plan_type']}-{row['plan_big_number']}-{row['plan_small_number_clean']}"
+        CROWN_PLANS_DATA[key] = row['title']
 # Global cache for search results (to avoid oversized session cookies)
 SEARCH_RESULTS_CACHE = {}
 
@@ -186,6 +194,19 @@ def search():
                 flash("No records found for the search query.", "warning")
                 return redirect(url_for("search"))
             logging.debug(f"Search results JSON: {json.dumps(documents)}")
+
+            # Add title information to crown plan search results
+            if search_type == "crown":
+                for doc in documents:
+                    source = doc.get("_source", {})
+                    plan_number = source.get("crownPlanNumber", "")
+                    plan_type = "SR" if source.get("sourceOffice") == "STATE RECORDS" else "BS"
+                    plan_parts = plan_number.split("-")
+                    if len(plan_parts) == 2:
+                        plan_big_number, plan_small_number_clean = plan_parts
+                        key = f"{plan_type}-{plan_big_number}-{plan_small_number_clean}"
+                        source["title"] = CROWN_PLANS_DATA.get(key, "No title available")
+
             result_key = str(uuid.uuid4())
             SEARCH_RESULTS_CACHE[result_key] = documents
             session["search_results_key"] = result_key

@@ -58,6 +58,7 @@
               <th>County</th>
               <th>Parish</th>
               <th>Date</th>
+              <th>Title</th>
               <th>Preview</th>
             </tr>
           {% elif search_type == "parish" %}
@@ -118,6 +119,7 @@
                     {{ source.scanTimestamp.split(" ")[0] }}
                   {% endif %}
                 </td>
+                <td>{{ source.title }}</td>
                 <td>
                   {% if source.images and source.images|length > 0 %}
                     {% for image in source.images %}
