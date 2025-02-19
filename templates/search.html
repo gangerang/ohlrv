@@ -6,6 +6,11 @@
   <title>OHLRV</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.10.2/font/bootstrap-icons.min.css">
+  <style>
+    .modal-lg-custom {
+      max-width: 80%; /* Adjust the width as needed */
+    }
+  </style>
   <script>
     // Fetch county/parish data and populate datalists.
     document.addEventListener("DOMContentLoaded", function() {
@@ -116,25 +121,25 @@
 
   <!-- Modal -->
   <div class="modal fade" id="infoModal" tabindex="-1" aria-labelledby="infoModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-lg-custom">
       <div class="modal-content">
         <div class="modal-header">
           <h5 class="modal-title" id="infoModalLabel">How to use the Crown Plan search</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body">
-          <p>Crown plans are referenced by what are referred to as big and small numbers. The big number refers to the plan number is a series.</p> 
-          <p>The small number refers to the series of plans, usually based on the parish or type of plan.</p>
-          <p>A plan with big number 296 and small number 3090 will have crown plan number 296-3090. This is the format used when searching.</p>
-          <p>These numbers can be found on parish maps or in title documents but there are a few ways in which they can be written.</p>
-          <p>Usually they are written on the portion on a parish map, with the big number written first and in bigger text than the small.</p>
-          <p>Sometimes, just the big number is written and so you'll need to work out the small number.</p>
-          <p>Usually the parish map will also have a table listing out the big numbers for each lot.</p>
-          <p>They may include the small number or have text at the top or bottom of the table to indicate what the small number will be if not otherwise listed.</p>
-          <p>If you can't find the small number, you can just enter the big number in the search and supply a county or parish. All matches will then be returned and you can try find the relevant plan that way.</p>
-          <p>There also exists what are referred to as 'Miscellaneous' plans or Ms. for short. These plans often use an abbreviation relating to the Lands Board District instead of a small number.</p>
-          <p>An example would be Ms. 296 Oe, which corresponds to plan 296-3090.</p>
-          <p>In the search box, you can enter a Crown Plan Number or a big number and miscellaneous (Ms.) reference code. Below are the codes, full names, and numbers:</p>
+          <p>Crown plans are referenced by what are referred to as big and small numbers. The big number refers to the plan number is a series.
+          The small number refers to the series of plans, usually based on the parish or type of plan.
+          A plan with big number 296 and small number 3090 will have crown plan number 296-3090. This is the format used when searching.<br><br>
+          These numbers can be found on parish maps or in title documents but there are a few ways in which they can be written.<br><br>
+          Usually they are written on the portion on a parish map, with the big number written first and in bigger text than the small.
+          Sometimes, just the big number is written and so you'll need to work out the small number.
+          Usually the parish map will also have a table listing out the big numbers for each lot.
+          They may include the small number or have text at the top or bottom of the table to indicate what the small number will be if not otherwise listed.<br><br>
+          If you can't find the small number, you can just enter the big number in the search and supply a county or parish. All matches will then be returned and you can try find the relevant plan that way.<br><br>
+          There also exists what are referred to as 'Miscellaneous' plans or Ms. for short. These plans often use an abbreviation relating to the Lands Board District instead of a small number.
+          An example would be Ms. 296 Oe, which corresponds to plan 296-3090.<br><br>
+          In the search box, you can enter a Crown Plan Number or a big number and miscellaneous (Ms.) reference code. Below are the codes, full names, and numbers:</p>
           <table class="table table-bordered">
             <thead>
               <tr>
