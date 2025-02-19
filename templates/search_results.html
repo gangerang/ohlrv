@@ -57,8 +57,8 @@
               <th>Source</th>
               <th>County</th>
               <th>Parish</th>
-              <th>Date</th>
               <th>Title</th>
+              <th>Created Date</th>
               <th>Preview</th>
             </tr>
           {% elif search_type == "parish" %}
@@ -112,14 +112,8 @@
                 <td>{{ "SR" if source.sourceOffice == "STATE RECORDS" else "BS" }}</td>
                 <td>{{ source.countyName }}</td>
                 <td>{{ source.parishName }}</td>
-                <td>
-                  {% if source.dateCreated %}
-                    {{ source.dateCreated.split(" ")[0] }}
-                  {% elif source.scanTimestamp %}
-                    {{ source.scanTimestamp.split(" ")[0] }}
-                  {% endif %}
-                </td>
                 <td>{{ source.title }}</td>
+                <td>{{ source.created_date }}</td>
                 <td>
                   {% if source.images and source.images|length > 0 %}
                     {% for image in source.images %}

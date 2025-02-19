@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from flask import Flask, render_template, request, redirect, url_for, flash, send_file, session
-import requests, json, subprocess, logging, os, zipfile, uuid, csv
+import requests, json, subprocess, logging, os, zipfile, uuid, csv, re
 from urllib.parse import quote
 
 app = Flask(__name__)
@@ -33,14 +33,25 @@ if os.path.exists(mapping_file):
 else:
     logging.warning("Mapping file collection_type_name.json not found.")
 
+# Function to clean the plan_small_number
+def clean_plan_small_number(plan_small_number):
+    return re.sub(r'P\d+$', '', plan_small_number)
+
 # Load crown plans data from CSV
 CROWN_PLANS_DATA = {}
 csv_file_path = os.path.join(os.path.dirname(__file__), "static", "data", "crown_plans.csv")
 with open(csv_file_path, mode='r') as csv_file:
     csv_reader = csv.DictReader(csv_file)
     for row in csv_reader:
-        key = f"{row['plan_type']}-{row['plan_big_number']}-{row['plan_small_number_clean']}"
-        CROWN_PLANS_DATA[key] = row['title']
+        cleaned_small_number = clean_plan_small_number(row['plan_small_number'])
+        key = f"{row['plan_type']}-{row['plan_big_number']}-{cleaned_small_number}"
+        if key not in CROWN_PLANS_DATA:
+            CROWN_PLANS_DATA[key] = {'titles': [], 'dates': []}
+        CROWN_PLANS_DATA[key]['titles'].append(row['title'])
+        if 'created_date' in row and row['created_date']:
+            date_str = f"{row['created_date'][:4]}-{row['created_date'][4:6]}-{row['created_date'][6:]}"
+            CROWN_PLANS_DATA[key]['dates'].append(date_str)
+
 # Global cache for search results (to avoid oversized session cookies)
 SEARCH_RESULTS_CACHE = {}
 
@@ -195,7 +206,7 @@ def search():
                 return redirect(url_for("search"))
             logging.debug(f"Search results JSON: {json.dumps(documents)}")
 
-            # Add title information to crown plan search results
+            # Add title and created_date information to crown plan search results
             if search_type == "crown":
                 for doc in documents:
                     source = doc.get("_source", {})
@@ -203,9 +214,15 @@ def search():
                     plan_type = "SR" if source.get("sourceOffice") == "STATE RECORDS" else "BS"
                     plan_parts = plan_number.split("-")
                     if len(plan_parts) == 2:
-                        plan_big_number, plan_small_number_clean = plan_parts
-                        key = f"{plan_type}-{plan_big_number}-{plan_small_number_clean}"
-                        source["title"] = CROWN_PLANS_DATA.get(key, "No title available")
+                        plan_big_number, plan_small_number = plan_parts
+                        cleaned_small_number = clean_plan_small_number(plan_small_number)
+                        key = f"{plan_type}-{plan_big_number}-{cleaned_small_number}"
+                        if key in CROWN_PLANS_DATA:
+                            source["title"] = "\n".join(CROWN_PLANS_DATA[key]['titles'])
+                            source["created_date"] = "\n".join(CROWN_PLANS_DATA[key]['dates'])
+                        else:
+                            source["title"] = "No title available"
+                            source["created_date"] = ""
 
             result_key = str(uuid.uuid4())
             SEARCH_RESULTS_CACHE[result_key] = documents
