@@ -14,35 +14,11 @@
           let counties = new Set();
           let parishes = new Set();
           data.forEach(item => {
-            counties.add(item.countyname);
             parishes.add(item.parishname);
           });
           const countyList = document.getElementById("countyList");
           counties.forEach(county => {
-            let option = document.createElement("option");
-            option.value = county;
             countyList.appendChild(option);
-          });
-          function populateParishList(list) {
-            const parishList = document.getElementById("parishList");
-            parishList.innerHTML = "";
-            list.forEach(parish => {
-              let option = document.createElement("option");
-              option.value = parish;
-              parishList.appendChild(option);
-            });
-          }
-          // Initially, show all parishes.
-          populateParishList(Array.from(parishes));
-          document.getElementById("county").addEventListener("input", function() {
-            const selectedCounty = this.value;
-            if(selectedCounty.trim() === "") {
-              populateParishList(Array.from(parishes));
-            } else {
-              const filtered = data.filter(item => item.countyname.toUpperCase() === selectedCounty.toUpperCase())
-                                   .map(item => item.parishname);
-              populateParishList(filtered);
-            }
           });
         })
         .catch(error => console.error("Error loading county/parish data:", error));
@@ -60,7 +36,7 @@
         <input type="hidden" name="search_type" value="crown">
         <div class="mb-3">
           <label for="search_str_crown" class="form-label">Enter Crown Plan Number (optional):</label>
-          <input type="text" id="search_str_crown" name="search_str" class="form-control" placeholder="Enter Crown Plan Number... eg 296-3090 (leave blank to search by county/parish)">
+          <input type="text" id="search_str_crown" name="search_str" class="form-control" placeholder="Enter Crown Plan Number... eg 296-3090 or 296 Oe (for 296-3090)">
         </div>
         <div class="row mb-3">
           <div class="col-md-6">

@@ -33,6 +33,15 @@ if os.path.exists(mapping_file):
 else:
     logging.warning("Mapping file collection_type_name.json not found.")
 
+# Load miscellaneous mapping from a JSON file.
+MISCELLANEOUS_MAPPING = {}
+mapping_file = os.path.join(os.path.dirname(__file__), "static", "data", "miscellaneous_mapping.json")
+if os.path.exists(mapping_file):
+    with open(mapping_file, "r") as f:
+        MISCELLANEOUS_MAPPING = json.load(f)
+else:
+    logging.warning("Mapping file miscellaneous_mapping.json not found.")
+
 # Function to clean the plan_small_number
 def clean_plan_small_number(plan_small_number):
     return re.sub(r'P\d+$', '', plan_small_number)
@@ -139,6 +148,12 @@ def search():
             if not (crown_number or county or parish):
                 flash("Please enter at least a Crown Plan number or county/parish.", "danger")
                 return redirect(url_for("search"))
+            
+            # Check for miscellaneous reference code and convert to small number
+            crown_parts = crown_number.split(" ")
+            if len(crown_parts) == 2 and crown_parts[1].lower() in MISCELLANEOUS_MAPPING:
+                crown_number = f"{crown_parts[0]}-{MISCELLANEOUS_MAPPING[crown_parts[1].lower()]['code']}"
+            
             pref_payload = {"preference": "attributeSearch"}
             must_clauses = []
             if crown_number:

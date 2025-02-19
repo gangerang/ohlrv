@@ -1,0 +1,22 @@
+{
+    "ay": {"code": "3005", "name": "Abury"},
+    "ae": {"code": "3010", "name": "Armidale"},
+    "be": {"code": "3015", "name": "Bourke"},
+    "cma": {"code": "3020", "name": "Cooma"},
+    "cta": {"code": "3025", "name": "Cootamundra"},
+    "do": {"code": "3030", "name": "Dubbo"},
+    "fs": {"code": "3035", "name": "Forbes"},
+    "gbn": {"code": "3040", "name": "Goulburn"},
+    "gfn": {"code": "3050", "name": "Grafton"},
+    "hy": {"code": "3060", "name": "Hay"},
+    "ky": {"code": "3065", "name": "Kempsey"},
+    "md": {"code": "3070", "name": "Maitland"},
+    "me": {"code": "3080", "name": "Moree"},
+    "na": {"code": "3085", "name": "Nowra"},
+    "oe": {"code": "3090", "name": "Orange"},
+    "sy": {"code": "3000", "name": "Sydney"},
+    "th": {"code": "3100", "name": "Tamworth"},
+    "te": {"code": "3105", "name": "Taree"},
+    "wga": {"code": "3110", "name": "Wagga Wagga"},
+    "wa": {"code": "3115", "name": "Wilcannia"}
+}
